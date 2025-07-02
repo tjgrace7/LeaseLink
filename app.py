@@ -15,6 +15,7 @@ from supabase import create_client
 from supabase.lib.client_options import ClientOptions
 import jwt
 import Supabase_api
+import uvicorn
 
 app = FastAPI()
 job_status = {}
