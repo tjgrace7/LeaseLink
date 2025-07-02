@@ -1,0 +1,29 @@
+# Virtual Environments
+venv/
+.venv/
+Venv311/
+
+#python Cache
+__pycache__
+*.psy
+*.py[cod]
+*.pyo
+
+#Environment Variables
+.env
+
+#Os junk
+.DS_Store
+
+#poppler
+poppler/
+#PDF test uploads or local storage
+*.pdf
+*.docx
+
+#Logs or temp files
+*.log
+*.tmp
+
+#VS Code settings
+.vscode/

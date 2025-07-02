@@ -1,0 +1,45 @@
+# Core FastAPI stack
+fastapi==0.115.13
+uvicorn==0.34.3
+starlette==0.46.2
+
+# Supabase client
+supabase==2.15.3
+gotrue==2.12.0
+postgrest==1.0.2
+realtime==2.4.3
+storage3==0.11.3
+
+# OpenAI + Embeddings
+openai==1.90.0
+tiktoken==0.9.0
+
+# Qdrant + Vector DB
+qdrant-client==1.14.3
+
+# PDF & OCR
+pdf2image==1.17.0
+pytesseract==0.3.13
+PyMuPDF==1.26.1
+pillow==11.2.1
+lxml==5.4.0
+
+# General Utils
+python-dotenv==1.1.0
+requests==2.32.4
+uuid
+
+# Data / Parsing
+pandas==2.3.0
+numpy==2.3.0
+scipy==1.16.0
+simplejson==3.20.1
+regex==2024.11.6
+
+# JSON and JWT
+PyJWT==2.10.1
+
+# Optional but useful
+httpx==0.28.1
+aiohttp==3.12.13
+typing_extensions==4.14.0
