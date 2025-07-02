@@ -74,7 +74,14 @@ def export_lease(job_id, lease_request):
         #Add Database update with error status
         job_status[job_id] = f"error: {str(e)}"
         print(f"Error processing job {job_id}: {e}")
-
+#APp.get to start application in Render
+@app.get("/")
+def root():
+    return {"message": "LeaseLink Backend Running"}
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
+    
 @app.post("/process-lease")
 async def process_file(request: Request, authorization: Optional[str]=Header(default=None)):
     job_id = str(uuid.uuid4())
