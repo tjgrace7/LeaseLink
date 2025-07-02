@@ -79,9 +79,7 @@ def export_lease(job_id, lease_request):
 @app.get("/")
 def root():
     return {"message": "LeaseLink Backend Running"}
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+
     
 @app.post("/process-lease")
 async def process_file(request: Request, authorization: Optional[str]=Header(default=None)):
@@ -163,3 +161,6 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
             }
     except Exception as e:
         print("chatGPT message failure:", e)
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
