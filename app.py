@@ -116,8 +116,7 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
 
     if not auth:
         raise HTTPException(status_code=403, detail="Unauthorized")
-    user_question_id = message_request.get("user_question_id")
-    response_question_id = message_request.get("response_question_id")
+    auth_id = message_request.get("auth_id")
     tenant_id = message_request.get("tenant_id")
 
     company_id = message_request.get("company_id")
@@ -126,30 +125,36 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
 
     session_id = message_request.get("session_id")
 
-    if not tenant_id or not company_id or not message or not session_id or not user_question_id or not response_question_id:
+    if not tenant_id or not company_id or not message or not session_id:
         raise HTTPException(status_code=400, detail="Bad Request")
     try:
         oldmessages = Supabase_api.message_get_request(supabase_client, session_id, "tenant_questions")
         final_message,  prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data = Qdrant_ChatGPT.get_relevant_chunks(collectionName, qdrant_client, "tenantid", tenant_id, company_id, message, OpenAIclient, oldmessages, supabase_client)
         if final_message != None:
             
-            supabase_client.table("tenant_questions").update([
+            supabase_client.table("tenant_questions").insert([
                 {
+                    "tenant_id": tenant_id,
+                    "company_id": company_id,
+                    "message": message,
+                    "role": 'user',
+                    "session_id": session_id,
                     "message_cost": prompt_cost,
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": 0   
-                }
-            ]).eq("tenant_question_id", user_question_id).execute()
-            supabase_client.table("tenant_questions").update([
+                },
                 {
-
+                    "tenant_id": tenant_id,
+                    "company_id": company-id,
+                    "role": 'assistant',
+                    "session_id": session_id,
                     "message": final_message,
                     "message_cost": completion_cost,
                     "prompt_tokens": 0,
                     "completion_tokens": completion_tokens,
                     "sources": json_data
                 }
-            ]).eq("tenant_question_id", response_question_id).execute()
+            ]).execute()
 
 
                 
@@ -157,8 +162,10 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
                 "response": final_message,
                 "session_id": session_id,
                 "pdf_reference(s)": json_data
-                
             }
+        else:
+             raise HTTPException(status_code=500, detail="System Prompt Failed")   
+            
     except Exception as e:
         print("chatGPT message failure:", e)
 if __name__ == "__main__":
