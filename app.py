@@ -127,9 +127,14 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
     message = message_request.get("message")
 
     session_id = message_request.get("session_id")
-
+    print("Auth ID:" auth_id)
+    print("Tenant Id:" tenant_id)
+    print("Company Id:" company_id)
+    print("Message:" message)
     if not tenant_id or not company_id or not message or not session_id or not auth_id:
         raise HTTPException(status_code=400, detail="Bad Request")
+    if auth["sub"] != auth_id:
+        raise HTTPException(status_code=403, detail="auth_id does not match token")
     try:
         oldmessages = Supabase_api.message_get_request(supabase_client, session_id, "tenant_questions")
         final_message,  prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data = Qdrant_ChatGPT.get_relevant_chunks(collectionName, qdrant_client, "tenantid", tenant_id, company_id, message, OpenAIclient, oldmessages, supabase_client)
