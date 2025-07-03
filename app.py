@@ -15,7 +15,7 @@ from supabase import create_client
 from supabase.lib.client_options import ClientOptions
 import jwt
 import Supabase_api
-import uvicorn
+from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI()
 job_status = {}
@@ -75,12 +75,14 @@ def export_lease(job_id, lease_request):
         #Add Database update with error status
         job_status[job_id] = f"error: {str(e)}"
         print(f"Error processing job {job_id}: {e}")
-#APp.get to start application in Render
-@app.get("/")
-def root():
-    return {"message": "LeaseLink Backend Running"}
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],  # 👈 Add your local dev URL
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
-    
 @app.post("/process-lease")
 async def process_file(request: Request, authorization: Optional[str]=Header(default=None)):
     job_id = str(uuid.uuid4())
@@ -116,7 +118,8 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
 
     if not auth:
         raise HTTPException(status_code=403, detail="Unauthorized")
-    auth_id = message_request.get("auth_id")
+    user_question_id = message_request.get("user_question_id")
+    response_question_id = message_request.get("response_question_id")
     tenant_id = message_request.get("tenant_id")
 
     company_id = message_request.get("company_id")
@@ -125,36 +128,30 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
 
     session_id = message_request.get("session_id")
 
-    if not tenant_id or not company_id or not message or not session_id:
+    if not tenant_id or not company_id or not message or not session_id or not user_question_id or not response_question_id:
         raise HTTPException(status_code=400, detail="Bad Request")
     try:
         oldmessages = Supabase_api.message_get_request(supabase_client, session_id, "tenant_questions")
         final_message,  prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data = Qdrant_ChatGPT.get_relevant_chunks(collectionName, qdrant_client, "tenantid", tenant_id, company_id, message, OpenAIclient, oldmessages, supabase_client)
         if final_message != None:
             
-            supabase_client.table("tenant_questions").insert([
+            supabase_client.table("tenant_questions").update([
                 {
-                    "tenant_id": tenant_id,
-                    "company_id": company_id,
-                    "message": message,
-                    "role": 'user',
-                    "session_id": session_id,
                     "message_cost": prompt_cost,
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": 0   
-                },
+                }
+            ]).eq("tenant_question_id", user_question_id).execute()
+            supabase_client.table("tenant_questions").update([
                 {
-                    "tenant_id": tenant_id,
-                    "company_id": company-id,
-                    "role": 'assistant',
-                    "session_id": session_id,
+
                     "message": final_message,
                     "message_cost": completion_cost,
                     "prompt_tokens": 0,
                     "completion_tokens": completion_tokens,
                     "sources": json_data
                 }
-            ]).execute()
+            ]).eq("tenant_question_id", response_question_id).execute()
 
 
                 
@@ -162,12 +159,7 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
                 "response": final_message,
                 "session_id": session_id,
                 "pdf_reference(s)": json_data
+                
             }
-        else:
-             raise HTTPException(status_code=500, detail="System Prompt Failed")   
-            
     except Exception as e:
         print("chatGPT message failure:", e)
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
