@@ -127,10 +127,10 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
     message = message_request.get("message")
 
     session_id = message_request.get("session_id")
-    print("Auth ID:" auth_id)
-    print("Tenant Id:" tenant_id)
-    print("Company Id:" company_id)
-    print("Message:" message)
+    print(f"Auth ID: {auth_id}")
+    print(f"Tenant Id: {tenant_id}")
+    print(f"Company Id: {company_id}")
+    print(f"Message: {message}")
     if not tenant_id or not company_id or not message or not session_id or not auth_id:
         raise HTTPException(status_code=400, detail="Bad Request")
     if auth["sub"] != auth_id:
