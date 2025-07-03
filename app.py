@@ -163,3 +163,7 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
             }
     except Exception as e:
         print("chatGPT message failure:", e)
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 8000))
+    uvicorn.run("app:app", host="0.0.0.0", port=port)
