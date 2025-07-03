@@ -27,7 +27,7 @@ lxml==5.4.0
 # General Utils
 python-dotenv==1.1.0
 requests==2.32.4
-uuid
+Python-multipart==0.0.9
 
 # Data / Parsing
 pandas==2.3.0
