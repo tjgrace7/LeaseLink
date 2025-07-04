@@ -8,34 +8,6 @@ import re
 import tiktoken
 import Supabase_api
 
-#For Updating Qdrant, update function to change filter fields in qdrant as desired
-def update_filter_fields():
-    load_dotenv()
-    print("Update_filter_fields")
-    q_client = QdrantClient(
-        url=os.getenv("QDRANT_URL"),
-        api_key=os.getenv("QDRANT_API_KEY"),
-        prefer_grpc=False
-    )
-    q_client.create_payload_index(
-        collection_name="Test-Leases",
-        field_name="managementcompany_id",
-        field_schema="keyword"
-        
-    )
-#testing function
-def Check_Vectors(q_client, collection_Name):
-    response = q_client.scroll(
-        collection_name=collection_Name,
-        limit = 5,
-        with_payload=True,
-        with_vectors=True
-    )
-    for point in response[0]:
-        print("ID: ", point.id)
-        print("Vector Length:", len(point.vector))
-        print("Payload keys:", point.payload.keys())
-        print("First 3 vector values:", point.vector[:3])
 
 #Clears entire qdrant collection **FOR TESTING ONLY**
 def clear_collection(q_client, collection_Name):
