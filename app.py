@@ -135,7 +135,7 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
     print(f"entity type: {entity_type}")
     print(f"Company Id: {company_id}")
     print(f"Message: {message}")
-    if not tenant_id or not company_id or not message or not session_id or not auth_id or not entity_type:
+    if not company_id or not message or not session_id or not auth_id or not entity_type:
         raise HTTPException(status_code=400, detail="Bad Request")
     if auth["sub"] != auth_id:
         raise HTTPException(status_code=403, detail="auth_id does not match token")
