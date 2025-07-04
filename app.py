@@ -159,7 +159,7 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
                     "auth_id": auth_id,
                     "message_cost": prompt_cost,
                     "prompt_tokens": prompt_tokens,
-                    "completion_tokens": 0   
+                    "completion_tokens": 0,
                     "entity": entity_type
                 },
                 {
@@ -171,7 +171,7 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
                     "auth_id": auth_id,
                     "message_cost": completion_cost,
                     "prompt_tokens": 0,
-                    "completion_tokens": completion_tokens   
+                    "completion_tokens": completion_tokens, 
                     "entity": entity_type
                 }
             ]).execute()
