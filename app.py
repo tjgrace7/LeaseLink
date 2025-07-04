@@ -105,7 +105,7 @@ async def process_file(request: Request, authorization: Optional[str]=Header(def
     }
 
 
-@app.post("/tenant_questions")
+@app.post("/entity_questions")
 async def tenant_send_message(request: Request, authorization: Optional[str]=Header(default=None), content_type: Optional[str] = Header(default=None)):
     body = await request.body()
     print("raw body: ", body)
@@ -120,7 +120,8 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
     if not auth:
         raise HTTPException(status_code=403, detail="Unauthorized")
     auth_id = message_request.get("auth_id")
-    tenant_id = message_request.get("tenant_id")
+    entity_type = message_requets.get("entity_type")
+    entity_id = message_request.get("entity_id")
 
     company_id = message_request.get("company_id")
 
@@ -128,21 +129,22 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
 
     session_id = message_request.get("session_id")
     print(f"Auth ID: {auth_id}")
-    print(f"Tenant Id: {tenant_id}")
+    print(f"entity Id: {entity_id}")
+    print(f"entity type: {entity_type}"
     print(f"Company Id: {company_id}")
     print(f"Message: {message}")
-    if not tenant_id or not company_id or not message or not session_id or not auth_id:
+    if not tenant_id or not company_id or not message or not session_id or not auth_id or not entity_type:
         raise HTTPException(status_code=400, detail="Bad Request")
     if auth["sub"] != auth_id:
         raise HTTPException(status_code=403, detail="auth_id does not match token")
     try:
-        oldmessages = Supabase_api.message_get_request(supabase_client, session_id, "tenant_questions")
-        final_message,  prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data = Qdrant_ChatGPT.get_relevant_chunks(collectionName, qdrant_client, "tenantid", tenant_id, company_id, message, OpenAIclient, oldmessages, supabase_client)
+        oldmessages = Supabase_api.message_get_request(supabase_client, session_id, "entity_questions")
+        final_message,  prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data = Qdrant_ChatGPT.get_relevant_chunks(collectionName, qdrant_client, "entity_id", entity_id, company_id, message, OpenAIclient, oldmessages, supabase_client)
         if final_message != None:
             
-            supabase_client.table("tenant_questions").insert([
+            supabase_client.table("entity_questions").insert([
                 {
-                    "tenant_id": tenant_id,
+                    "entity_id": entity_id,
                     "company_id": company_id,
                     "message": message,
                     "role": 'user',
@@ -151,9 +153,10 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
                     "message_cost": prompt_cost,
                     "prompt_tokens": prompt_tokens,
                     "completion_tokens": 0   
+                    "entity": entity_type
                 },
                 {
-                    "tenant_id": tenant_id,
+                    "entity_id": entity_id,
                     "company_id": company_id,
                     "message": final_message,
                     "role": 'assistant',
@@ -162,6 +165,7 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
                     "message_cost": completion_cost,
                     "prompt_tokens": 0,
                     "completion_tokens": completion_tokens   
+                    "entity": entity_type
                 }
             ]).execute()
 
