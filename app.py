@@ -120,7 +120,7 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
     if not auth:
         raise HTTPException(status_code=403, detail="Unauthorized")
     auth_id = message_request.get("auth_id")
-    entity_type = message_requet.get("entity_type")
+    entity_type = message_request.get("entity_type")
     entity_id = message_request.get("entity_id")
 
     company_id = message_request.get("company_id")
