@@ -148,7 +148,8 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
         elif entity_type == "unit":
             filtertype = "unitid"
         oldmessages = Supabase_api.message_get_request(supabase_client, session_id, "entity_questions")
-        final_message,  prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data = Qdrant_ChatGPT.get_relevant_chunks(collectionName, qdrant_client, "entity_id", entity_id, company_id, message, OpenAIclient, oldmessages, supabase_client)
+        print(filtertype)
+        final_message,  prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data = Qdrant_ChatGPT.get_relevant_chunks(collectionName, qdrant_client, filtertype, entity_id, company_id, message, OpenAIclient, oldmessages, supabase_client)
         if final_message != None:
             
             supabase_client.table("entity_questions").insert([
