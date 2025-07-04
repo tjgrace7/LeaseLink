@@ -175,7 +175,8 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
                     "message_cost": completion_cost,
                     "prompt_tokens": 0,
                     "completion_tokens": completion_tokens, 
-                    "entity": entity_type
+                    "entity": entity_type,
+                    "sources": json_data
                 }
             ]).execute()
 
