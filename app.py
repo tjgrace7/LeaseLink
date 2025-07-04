@@ -83,7 +83,9 @@ def export_lease(job_id, lease_request):
         #Add Database update with error status
         job_status[job_id] = f"error: {str(e)}"
         print(f"Error processing job {job_id}: {e}")
-
+@app.get("/")
+def root():
+    return {"message": "API is running"}
 @app.post("/process-lease")
 async def process_file(request: Request, authorization: Optional[str]=Header(default=None)):
     job_id = str(uuid.uuid4())
