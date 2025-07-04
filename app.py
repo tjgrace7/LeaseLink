@@ -130,7 +130,7 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
     session_id = message_request.get("session_id")
     print(f"Auth ID: {auth_id}")
     print(f"entity Id: {entity_id}")
-    print(f"entity type: {entity_type}"
+    print(f"entity type: {entity_type}")
     print(f"Company Id: {company_id}")
     print(f"Message: {message}")
     if not tenant_id or not company_id or not message or not session_id or not auth_id or not entity_type:
