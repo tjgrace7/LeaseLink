@@ -86,6 +86,7 @@ def export_lease(job_id, lease_request):
 @app.get("/")
 def root():
     return {"message": "API is running"}
+@app.head("/")
 @app.post("/process-lease")
 async def process_file(request: Request, authorization: Optional[str]=Header(default=None)):
     job_id = str(uuid.uuid4())
