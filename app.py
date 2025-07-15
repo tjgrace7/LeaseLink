@@ -16,12 +16,14 @@ from supabase.lib.client_options import ClientOptions
 import jwt
 import Supabase_api
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse  # ✅ Add this
+
 
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # 👈 Add your local dev URL
+    allow_origins=["https://www.leaselink.ai"],  # 👈 Add your local dev URL
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
