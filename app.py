@@ -155,7 +155,7 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
         final_message,  prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data = Qdrant_ChatGPT.get_relevant_chunks(collectionName, qdrant_client, filtertype, entity_id, company_id, message, OpenAIclient, oldmessages, supabase_client)
         if final_message != None:
             
-            await supabase_client.table("entity_questions").insert([
+            supabase_client.table("entity_questions").insert([
                 {
                     "entity_id": entity_id,
                     "company_id": company_id,
@@ -168,7 +168,7 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
                     "completion_tokens": 0,
                     "entity": entity_type
                 }]).execute()
-            await supabase_client.table('entity_questions').insert([{
+             supabase_client.table('entity_questions').insert([{
                     "entity_id": entity_id,
                     "company_id": company_id,
                     "message": final_message,
