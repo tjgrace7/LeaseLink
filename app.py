@@ -150,6 +150,8 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
             filtertype = "propertyid"
         elif entity_type == "unit":
             filtertype = "unitid"
+        elif entity_type == "company":
+            filtertype = "managementcompany_id"
         oldmessages = Supabase_api.message_get_request(supabase_client, session_id, "entity_questions")
         print(entity_type)
         print(filtertype)
