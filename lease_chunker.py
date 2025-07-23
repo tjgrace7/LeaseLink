@@ -4,6 +4,7 @@ import re
 import embed_files
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
+import psutil, os
 
 
 corrections = {
@@ -90,7 +91,7 @@ def process_page(img, page_number, client, tenantid, propertymanagerid, property
         text = image_to_string(binary)
         clean_text = clean_ocr_text(text)
         chunks = chunk(clean_text)
-
+        print('Memory (MB):', psutil.Process(os.getpid()).memory_info().rss/1024**2)
         vectors = []
         #Breaks down every chunk on given page and turns it into vector with a payload
         for chunk_index, chunk_text in enumerate(chunks):
@@ -128,7 +129,7 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
 
     all_vectors = []
     #Runs each images converted from bytes on seperate thread for efficiency and speed
-    with ThreadPoolExecutor() as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         futures = [
             #takes each page and submits it to process_page on seperate thread
             executor.submit(
