@@ -27,7 +27,7 @@ Built with:
 ### 1. Clone the repo
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/leaselink-backend.git
+git clone https://github.com/tgraceleaselink/LeaseLink
 cd leaselink-backend
 
 #Create a virtual environment
