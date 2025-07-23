@@ -41,7 +41,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
     try:
         print("starting extraction")
         #Sends message to ChatGPT to extract needed data from lease
-        extracted_lease_data, embeddingcost = Qdrant_ChatGPT.get_relevant_chunks_from_lease(collectionName, qdrant_client, OpenAIclient, upload_session_id)
+        extracted_lease_data, total_cost = Qdrant_ChatGPT.get_relevant_chunks_from_lease(collectionName, qdrant_client, OpenAIclient, upload_session_id)
 
         if isinstance(extracted_lease_data, str):
             #if returned as string converts to json
@@ -59,7 +59,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         lease_data["created_by"] = auth_id
         lease_data["lease_id"] = lease_id
         lease_data["status"] = "Complete"
-        lease_data["cost_per_upload"] = embeddingcost
+        lease_data["cost_per_upload"] = total_cost
         #upserts lease_data into lease_documents table in supabase
         Supabase_api.supabase_post_request(supabase_client, [lease_data], "lease_documents")
     except Exception as e:
