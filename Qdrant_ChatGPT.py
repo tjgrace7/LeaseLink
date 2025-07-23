@@ -324,9 +324,9 @@ Items in () describe the item being searched for do not include in json response
     try:
         json_start=chat_response.choices[0].message.content.find("{")
         token_usage = chat_response.usage
-        prompt_tokens += token_usage.prompt_tokens
+        prompt_tokens = token_usage.prompt_tokens
         prompt_cost = (prompt_tokens/1000*.01) + (embedding_token_count/1000*.00013)
-        completion_tokens += token_usage.completion_tokens
+        completion_tokens = token_usage.completion_tokens
         completion_cost = completion_tokens/1000*.03
         print("json_start:", json_start)
         total_cost = prompt_cost + completion_cost + embeddingcost
