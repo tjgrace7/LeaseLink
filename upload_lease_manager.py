@@ -1,15 +1,10 @@
 from dotenv import load_dotenv  
 import os
-from openai import OpenAI
-from qdrant_client import QdrantClient
-from qdrant_client.http.models import VectorParams, Distance, Filter, FieldCondition, MatchValue
-from qdrant_client.models import PayloadSchemaType
 import lease_chunker
 import uuid
 import Qdrant_ChatGPT
 import json
 from supabase import create_client
-from supabase.lib.client_options import ClientOptions
 import Supabase_api
 import requests
 
@@ -21,7 +16,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
 
     pdf_file = Supabase_api.download_file(supabase_client, bucket_name, get_pdf)
     #Converts pdf to image, then to text, chunks text, embeds text, and converts to json payload for qdrant
-    vectors = lease_chunker.extract_text_from_pdf(pdf_file, OpenAIclient, tenantid, auth_id, propertyid, unit_id,upload_session_id, get_pdf, company_id)
+    vectors, total_pages = lease_chunker.extract_text_from_pdf(pdf_file, OpenAIclient, tenantid, auth_id, propertyid, unit_id,upload_session_id, get_pdf, company_id)
 
     batch_size = 50
     #Takes embeded leases and upserts in qdrant 
@@ -60,6 +55,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         lease_data["lease_id"] = lease_id
         lease_data["status"] = "Complete"
         lease_data["cost_per_upload"] = total_cost
+        lease_data['page_count'] = total_pages
         #upserts lease_data into lease_documents table in supabase
         Supabase_api.supabase_post_request(supabase_client, [lease_data], "lease_documents")
     except Exception as e:

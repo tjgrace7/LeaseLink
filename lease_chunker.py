@@ -3,7 +3,6 @@ from pytesseract import image_to_string
 import re
 import embed_files
 from concurrent.futures import ThreadPoolExecutor
-from datetime import datetime
 import psutil, os
 
 
@@ -123,8 +122,11 @@ def process_page(img, page_number, client, tenantid, propertymanagerid, property
 
 def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id):
     print("Converting Pdf to Images")
+
     #converts all bytes downloaded from supabase into images for tesseract to convert to text and embed
     images = convert_from_bytes(pdf, dpi=300)
+    total_pages = len(images)
+
     print("Processing Images/Cleaning/Embedding with threading")
 
     all_vectors = []
@@ -155,6 +157,6 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
                 all_vectors.extend(result)
 
     print("Image to Text success")
-    return all_vectors
+    return all_vectors, total_pages
 
 

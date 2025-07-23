@@ -1,7 +1,5 @@
 from supabase import create_client
-from supabase.lib.client_options import ClientOptions
 import os
-import os.path
 from dotenv import load_dotenv
 
 # ✅ Create Supabase client using service role key
@@ -38,9 +36,9 @@ def supabase_post_request(supabase_client, data: dict, table: str):
 def download_file(supabase_client, bucket_name: str, file_path: str):
     print("Downloading_file")
     #Gets file_basename
-    local_filename = os.path.basename(file_path)
     storage = supabase_client.storage.from_(bucket_name)
     #Gets file bytes from stored location in supabase
+
     file_bytes = storage.download(file_path)
     if file_bytes:
         print("file_bytest returned!")

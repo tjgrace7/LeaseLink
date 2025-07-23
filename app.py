@@ -9,10 +9,7 @@ from dotenv import load_dotenv
 import threading
 from openai import OpenAI
 from qdrant_client import QdrantClient
-from qdrant_client.http.models import VectorParams, Distance, Filter, FieldCondition, MatchValue
-from qdrant_client.models import PayloadSchemaType
 from supabase import create_client
-from supabase.lib.client_options import ClientOptions
 import jwt
 import Supabase_api
 from fastapi.middleware.cors import CORSMiddleware
