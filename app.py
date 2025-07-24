@@ -14,6 +14,9 @@ import jwt
 import Supabase_api
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse  # ✅ Add this
+import sys
+import traceback
+import signal
 
 
 app = FastAPI()
@@ -32,6 +35,21 @@ collectionName = "Test-Leases"
 supabase_url = os.getenv("SUPABASE_URL")
 JWKS_URL = f"{supabase_url}/auth/v1/keys"
 SUPABASE_JWT = os.getenv("SUPABASE_JWT")
+
+def handle_exception(exc_type, exc_value, exc_traceback):
+    if issubclass(exc_type, KeyboardInterrupt):
+        return
+    print("Unhandled Exception:", "".join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
+
+sys.excepthook = handle_exception
+
+def signal_handler(sig, frame):
+    print(f"Received Signal: {sig}")
+    sys.exit(0)
+
+signal.signal(signal.SIGINT, signal_handler)
+signal.signal(signal.SIGTERM, signal_handler)
+
 
 #Connects OpenAI api key
 OpenAIclient = OpenAI(api_key=os.getenv("OPEN_AI_PROJECT_KEY"))

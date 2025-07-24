@@ -289,7 +289,7 @@ Here is the lease text:
 - lease_execution_date (the Day the lease was signed)
 - lease_commencement_date (The Day the Lease takes effect)
 - Property_Address
-- suite_itentifier (The number or letter of the suite without the address)
+- suite_identifier (The number or letter of the suite without the address)
 - lease_type (NNN, Gross, Percentage)
 - lease_expiration_date
 - lease_term
@@ -309,10 +309,10 @@ Here is the lease text:
 - renewal_notice_deadline
 - CAM_start_date
 - option_exercise_deadlines (The time in which the tenant must have accepted the option to renew)
-- delivery_or_possession_date (The day the tenants may access the space)
-- renewal options
+- delivery_possession_date (The day the tenants may access the space)
+- renewal_options
 - termination_rights
-- expansion_or_contraction_rights (The provisions that allow the tenant to grow into more space or shrink out of other space.)
+- expansion_contraction_rights (The provisions that allow the tenant to grow into more space or shrink out of other space.)
 - co_tenancy_clauses
 - purchase_option
 - rentable_square_footage (Useable SF + share of common areas (hallways, restrooms, etc.))
@@ -342,6 +342,7 @@ Here is the lease text:
 - security_deposit_term
 - ROFR_ROFO_clauses (Right of First Refusal clauses or Right of First Offer clauses)
 - security_access_rights
+- exclusivity_rights
 
 
 
