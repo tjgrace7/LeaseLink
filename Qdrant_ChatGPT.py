@@ -347,7 +347,9 @@ Here is the lease text:
 
 
 Respond only with a JSON object. Do not add null values. Omit missing fields. Do not include any text outside the JSON object. **Do not add fields that may apply. Only send keys that are listed above. Errors will occur if extra fields send** Dates must be formatted as yyyy/mm/dd. Dates not in this format will fail (Omit if not complete)
-Items in () describe the item being searched for do not include in json response
+Items in () describe the item being searched for do not include in json response,
+
+If json key is N/A just exclude
 """
     print("prompt")
     chat_response = chatGPT.chat.completions.create(
@@ -369,6 +371,7 @@ Items in () describe the item being searched for do not include in json response
         total_cost = prompt_cost + completion_cost + embeddingcost
         json_string=chat_response.choices[0].message.content[json_start:]
         print("json_string:", json_string)
+        del prompt_tokens, prompt_cost, completion_tokens, completion_cost, prompt, context, results, query_vector,  
         return json.loads(json_string), total_cost
     except Exception as e:
         print("Failed to parse JSON:", chat_response.choices[0].message.content)

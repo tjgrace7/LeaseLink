@@ -73,6 +73,8 @@ def clean_ocr_text(text):
         if not is_gibberish(line):
             cleaned_lines.append(line)
     #Joins Lines together
+    del cleaned_text
+    del lines
     return '\n'.join(cleaned_lines)
 
 def chunk(text):
@@ -125,6 +127,15 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
                 company_id
             )
             vectors.append(vector_data)
+            del text
+            del clean_text
+            del chunks
+            del reader
+            del writer 
+            del single_page_pdf
+            del image
+            del gray
+            del binary
 
         return vectors
 
@@ -140,7 +151,7 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
 
     all_vectors = []
     #Runs each images converted from bytes on seperate thread for efficiency and speed
-    with ThreadPoolExecutor(max_workers=2) as executor:
+    with ThreadPoolExecutor(max_workers=3) as executor:
         futures = [
             executor.submit(
                 process_page,
@@ -163,6 +174,7 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
                 all_vectors.extend(result)
 
     print("Image to Text success")
+    del reader
     return all_vectors, total_pages
 
 

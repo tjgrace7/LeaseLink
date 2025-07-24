@@ -211,7 +211,7 @@ async def tenant_send_message(request: Request, authorization: Optional[str]=Hea
             ]).execute()
 
 
-                
+            print("Success")
             return {
                 "response": final_message,
                 "session_id": session_id,

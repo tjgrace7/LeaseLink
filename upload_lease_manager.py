@@ -16,8 +16,9 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
 
     pdf_file = Supabase_api.download_file(supabase_client, bucket_name, get_pdf)
     #Converts pdf to image, then to text, chunks text, embeds text, and converts to json payload for qdrant
+    print("Starting PDF text extraction + embedding")
     vectors, total_pages = lease_chunker.extract_text_from_pdf(pdf_file, OpenAIclient, tenantid, auth_id, propertyid, unit_id,upload_session_id, get_pdf, company_id)
-
+    print (f"Finished Embedding {len(vectors)} chunks from {total_pages} pages")
     batch_size = 50
     #Takes embeded leases and upserts in qdrant 
     for i in range(0, len(vectors), batch_size):
@@ -58,9 +59,20 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         lease_data['page_count'] = total_pages
         #upserts lease_data into lease_documents table in supabase
         Supabase_api.supabase_post_request(supabase_client, [lease_data], "lease_documents")
+        print("Success")
+
     except Exception as e:
         print(f"GPT extraction or supabase insert failed: {e}")
         Clear_Uploads(lease_id, bucket_name, get_pdf, e)
+    finally:
+        del supabase_client
+        del lease_data
+        del extracted_lease_data
+        del qdrant_client
+        del upload_session_id
+        del pdf_file
+        del vectors
+        del total_pages
 
 def Clear_Uploads(lease_id, bucket, file_path, error):
         supabaseurl = os.getenv("SUPABASE_URL")
