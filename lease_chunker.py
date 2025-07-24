@@ -4,6 +4,8 @@ import re
 import embed_files
 from concurrent.futures import ThreadPoolExecutor
 import psutil, os
+from io import BytesIO
+from PyPDF2 import PdfReader, PdfWriter
 
 
 corrections = {
@@ -80,24 +82,35 @@ def chunk(text):
 
 # (Keep corrections, apply_corrections, is_gibberish, clean_ocr_text, and chunk as-is)
 
-def process_page(img, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id):
+
+def process_page(pdf, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id):
     try:
+        # Extract only this page from the PDF
+        reader = PdfReader(BytesIO(pdf))
+        writer = PdfWriter()
+        writer.add_page(reader.pages[page_number])
+        single_page_pdf = BytesIO()
+        writer.write(single_page_pdf)
+
+        # Convert just this page to an image
+        image = convert_from_bytes(single_page_pdf.getvalue(), dpi=300)[0]  # ✅ Lower DPI for speed + memory
+
         # Convert to grayscale and binarize
-        gray = img.convert("L")
+        gray = image.convert("L")
         binary = gray.point(lambda x: 0 if x < 180 else 255, '1')
 
         # OCR
         text = image_to_string(binary)
         clean_text = clean_ocr_text(text)
         chunks = chunk(clean_text)
-        print('Memory (MB):', psutil.Process(os.getpid()).memory_info().rss/1024**2)
+
+        print(f"Processed page {page_number + 1}")
+        print('Memory (MB):', psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2)
+
         vectors = []
-        #Breaks down every chunk on given page and turns it into vector with a payload
         for chunk_index, chunk_text in enumerate(chunks):
             if not isinstance(chunk_text, str) or not chunk_text.strip():
-                print(f"Skipping invalid chunk at page {page_number}, index {chunk_index}")
                 continue
-                #Calls embed_files.EmbedFiles to use text-embedding-large (by OpenAI) to create vectors for each page
             vector_data = embed_files.EmbedFiles(
                 client,
                 chunk_text,
@@ -106,37 +119,32 @@ def process_page(img, page_number, client, tenantid, propertymanagerid, property
                 propertyid,
                 unit_id,
                 upload_session_id,
-                page_number,
+                page_number + 1,  # Display page as 1-based
                 source_doc_name,
                 chunk_index,
                 company_id
             )
-            #add vector into vectors list
             vectors.append(vector_data)
 
         return vectors
 
     except Exception as e:
-        print(f"Error processing page {page_number}: {e}")
+        print(f"Error processing page {page_number + 1}: {e}")
         return []
 
 def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id):
-    print("Converting Pdf to Images")
+    reader = PdfReader(BytesIO(pdf))
+    total_pages = len(reader.pages)
 
-    #converts all bytes downloaded from supabase into images for tesseract to convert to text and embed
-    images = convert_from_bytes(pdf, dpi=300)
-    total_pages = len(images)
-
-    print("Processing Images/Cleaning/Embedding with threading")
+    print("Processing each page with threading (one at a time in memory)")
 
     all_vectors = []
     #Runs each images converted from bytes on seperate thread for efficiency and speed
     with ThreadPoolExecutor(max_workers=2) as executor:
         futures = [
-            #takes each page and submits it to process_page on seperate thread
             executor.submit(
                 process_page,
-                img,
+                pdf,  # Full byte stream
                 page_number,
                 client,
                 tenantid,
@@ -147,10 +155,8 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
                 source_doc_name,
                 company_id
             )
-            #for loop runs each page simultaniously
-            for page_number, img in enumerate(images, start=1)
+            for page_number in range(total_pages)
         ]
-        #Adds each future page into extended all_vectors as they are processed
         for future in futures:
             result = future.result()
             if result:
@@ -158,5 +164,6 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
 
     print("Image to Text success")
     return all_vectors, total_pages
+
 
 

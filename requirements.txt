@@ -45,3 +45,4 @@ aiohttp==3.12.13
 typing_extensions==4.14.0
 
 psutil
+PyPDF2==3.0.1
