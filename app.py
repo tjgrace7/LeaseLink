@@ -87,20 +87,30 @@ def root():
     return {"message": "API is running"}
 @app.head("/")
 @app.post("/process-lease")
-async def process_file(request: Request, authorization: Optional[str]=Header(default=None)):
+async def process_file(request: Request, authorization: Optional[str] = Header(default=None)):
     job_id = str(uuid.uuid4())
     job_status[job_id] = {"status": "pending", "error": None, "result": None}
+    
     if authorization != f"Bearer {EDGE_SECRET}":
         raise HTTPException(status_code=403, detail="Unauthorized")
-    
-    lease_request = await request.json()
-    file_path = lease_request.get("file_path")
-    if not file_path:    
-        raise HTTPException(status_code=400, datail="Missing file_path")
 
-    thread = threading.Thread(target=export_lease, args=(job_id, lease_request))
-    thread.start()
-    print(thread)
+    lease_request = await request.json()
+    print(f"[{job_id}] lease_request: {lease_request}")
+
+    file_path = lease_request.get("file_path")
+    if not file_path:
+        raise HTTPException(status_code=400, detail="Missing file_path")
+
+    print(f"[{job_id}] Creating thread")
+    try:
+        thread = threading.Thread(target=export_lease, args=(job_id, lease_request))
+        thread.start()
+        print(f"[{job_id}] Thread started: {thread}")
+    except Exception as e:
+        print(f"[{job_id}] Failed to start thread: {e}")
+        job_status[job_id] = {"status": "error", "error": str(e), "result": None}
+        raise HTTPException(status_code=500, detail=f"Thread start failed: {e}")
+    
     return {
         "status": "processing_started",
         "job_id": job_id
