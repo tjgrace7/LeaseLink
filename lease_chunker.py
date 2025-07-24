@@ -131,7 +131,7 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
 
     all_vectors = []
     #Runs each images converted from bytes on seperate thread for efficiency and speed
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=2) as executor:
         futures = [
             #takes each page and submits it to process_page on seperate thread
             executor.submit(
