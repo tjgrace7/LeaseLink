@@ -299,7 +299,7 @@ Here is the lease text:
 - base_rent_psf (The Per Square Foot Base Rent (Annual Rent / SF))
 - base_rent_annually
 - operating_expenses_CAM_psf (CAM expenses per square foot)
-- operating_expense_CAM_monthly
+- operating_expenses_CAM_monthly
 - CAM_Summary
 - property_taxes
 - insurance_costs
