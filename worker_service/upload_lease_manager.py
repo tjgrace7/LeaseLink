@@ -41,12 +41,12 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         #Adds auth_id into lease_data
         lease_data["created_by"] = auth_id
         lease_data["lease_id"] = lease_id
-        lease_data["status"] = "Complete"
         lease_data["cost_per_upload"] = total_cost
         lease_data['page_count'] = total_pages
         #upserts lease_data into lease_documents table in supabase
         Supabase_api.supabase_post_request(supabase_client, [lease_data], "lease_documents")
-        supabase_client.table('tenant').update({'Available': True}).eq('tenant_id', tenantid).execute()
+        job_status[job_id]['status'] = 'done'
+        supabase_client.table('Upload_Job_Status').update({'job_info': job_status}).eq('job_id', job_id)
 
         
         print("Success")
