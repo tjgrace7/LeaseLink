@@ -101,11 +101,11 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
         image = convert_from_bytes(single_page_pdf.getvalue(), dpi=300)[0]  # ✅ Lower DPI for speed + memory
 
         # Convert to grayscale and binarize
-        gray = image.convert("L")
-        binary = gray.point(lambda x: 0 if x < 180 else 255, '1')
+       # gray = image.convert("L")
+        #binary = gray.point(lambda x: 0 if x < 180 else 255, '1')
 
         # OCR
-        text = image_to_string(binary)
+        text = image_to_string(image)
         clean_text = clean_ocr_text(text)
         chunks = chunk(clean_text)
 
