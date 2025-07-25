@@ -47,7 +47,7 @@ def job_worker():
         try:
             print(f"[{job_id}] Starting Job")
             job_status[job_id]["status"] = 'in_progress'
-            export_lease(job_id, lease_request)
+            export_lease(job_id, lease_request, job_status[job_id])
             job_status[job_id]["status"] = "done"
         except Exception as e:
             print(f"[{job_id}] Job failed: {e}")
@@ -57,7 +57,7 @@ def job_worker():
             bucket = lease_request.get("bucket")
             file_path = lease_request.get("file_path")
             
-            upload_lease_manager.Clear_Uploads(job_id, bucket, file_path)
+            upload_lease_manager.Clear_Uploads(job_id, bucket, file_path, job_status[job_id])
         finally:
             job_queue.task_done()
             supabase_client.table('Upload_Job_Status').update({"job_info": job_status[job_id]}).eq('job_id', job_id).execute()
@@ -99,7 +99,7 @@ def verify_supabase_jwt(token: str):
         options={"verify_aud": True}
     )
     return payload
-def export_lease(job_id, lease_request):
+def export_lease(job_id, lease_request, job_status):
     try:
 
         job_status[job_id]["status"] = "in_progess"
@@ -118,14 +118,15 @@ def export_lease(job_id, lease_request):
             OpenAIclient,
             qdrant_client,
             supabase_client,
-            job_id
+            job_id,
+            job_status
         )
 
     except Exception as e:
 
         bucket = lease_request.get("bucket")
         file_path = lease_request.get("file_path")
-        upload_lease_manager.Clear_Uploads(job_id, bucket, file_path)
+        upload_lease_manager.Clear_Uploads(job_id, bucket, file_path, job_status[job_id])
         print(f"Error processing job {job_id}: {e}")
 @app.get("/")
 def root():

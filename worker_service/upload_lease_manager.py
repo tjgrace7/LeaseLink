@@ -8,7 +8,7 @@ from common.cleanup_utils import Clear_Uploads
 
 
 
-def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_name, company_id, collectionName, OpenAIclient, qdrant_client, supabase_client, job_id):
+def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_name, company_id, collectionName, OpenAIclient, qdrant_client, supabase_client, job_id, job_status):
     load_dotenv()
     upload_session_id = str(uuid.uuid4())
     print(f"Upload_Session_id: {upload_session_id}")
@@ -17,7 +17,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
     pdf_file = Supabase_api.download_file(supabase_client, bucket_name, get_pdf)
     #Converts pdf to image, then to text, chunks text, embeds text, and converts to json payload for qdrant
     print("Starting PDF text extraction + embedding")
-    total_pages = lease_chunker.extract_text_from_pdf(pdf_file, OpenAIclient, tenantid, auth_id, propertyid, unit_id,upload_session_id, get_pdf, company_id, job_id, bucket_name, get_pdf, qdrant_client)
+    total_pages = lease_chunker.extract_text_from_pdf(pdf_file, OpenAIclient, tenantid, auth_id, propertyid, unit_id,upload_session_id, get_pdf, company_id, job_id, bucket_name, get_pdf, qdrant_client, job_status)
     print("Finished Embedding Total Page: ", total_pages)
 
 
@@ -53,7 +53,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
 
     except Exception as e:
         print(f"GPT extraction or supabase insert failed: {e}")
-        Clear_Uploads(job_id, bucket_name, get_pdf)
+        Clear_Uploads(job_id, bucket_name, get_pdf, job_status)
     finally:
         del supabase_client
         del extracted_lease_data
