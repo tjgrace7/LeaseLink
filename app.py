@@ -17,6 +17,8 @@ from fastapi.responses import JSONResponse  # ✅ Add this
 import sys
 import traceback
 import signal
+from queue import Queue
+import threading, time
 
 
 app = FastAPI()
@@ -36,6 +38,27 @@ supabase_url = os.getenv("SUPABASE_URL")
 JWKS_URL = f"{supabase_url}/auth/v1/keys"
 SUPABASE_JWT = os.getenv("SUPABASE_JWT")
 
+
+job_queue = Queue()
+MAX_WORKERS = 2
+
+def job_worker():
+    while True:
+        job_id, lease_request = job_queue.get()
+        try:
+            print(f"[{job_id}] Starting Job")
+            export_lease(job_id, lease_request)
+            job_status[job_id]["status"] = "done"
+        except Exception as e:
+            print(f"[{job_id}] Job failed: {e}")
+            job_status[job_id]["status"] = "error"
+            job_status[job_id]["error"] = str(e)
+        finally:
+            job_queue.task_done()
+
+for _ in range(MAX_WORKERS):
+    t = threading.Thread(target = job_worker, daemon=True)
+    t.start()
 def handle_exception(exc_type, exc_value, exc_traceback):
     if issubclass(exc_type, KeyboardInterrupt):
         return
@@ -121,19 +144,16 @@ async def process_file(request: Request, authorization: Optional[str] = Header(d
 
     print(f"[{job_id}] Creating thread")
     try:
-        thread = threading.Thread(target=export_lease, args=(job_id, lease_request))
-        thread.start()
-        print(f"[{job_id}] Thread started: {thread}")
+        job_queue.put_nowait((job_id, lease_request))
     except Exception as e:
-        print(f"[{job_id}] Failed to start thread: {e}")
+        print(f"[{job_id}] Failed to queue job: {e}")
         job_status[job_id] = {"status": "error", "error": str(e), "result": None}
-        raise HTTPException(status_code=500, detail=f"Thread start failed: {e}")
-    
+        raise HTTPException(status_code=500, detail=f"Queue failed: {e}")
+
     return {
-        "status": "processing_started",
+        "status": "queued",
         "job_id": job_id
     }
-
 
 @app.post("/entity_questions")
 async def tenant_send_message(request: Request, authorization: Optional[str]=Header(default=None), content_type: Optional[str] = Header(default=None)):
