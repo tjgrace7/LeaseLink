@@ -41,13 +41,13 @@ SUPABASE_JWT = os.getenv("SUPABASE_JWT")
 job_queue = Queue()
 MAX_WORKERS = 2
 
-def job_worker():
+async def job_worker():
     while True:
         job_id, lease_request = job_queue.get()
         try:
             print(f"[{job_id}] Starting Job")
             job_status[job_id]["status"] = 'in_progress'
-            export_lease(job_id, lease_request)
+            await export_lease(job_id, lease_request)
             job_status[job_id]["status"] = "done"
         except Exception as e:
             print(f"[{job_id}] Job failed: {e}")
@@ -99,7 +99,7 @@ def verify_supabase_jwt(token: str):
         options={"verify_aud": True}
     )
     return payload
-def export_lease(job_id, lease_request):
+async def export_lease(job_id, lease_request):
     try:
 
         job_status[job_id]["status"] = "in_progess"
