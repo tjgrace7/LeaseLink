@@ -136,7 +136,7 @@ Respond only with a JSON object. Do not add null values. Omit missing fields. Do
 
 Items in () describe the item being searched for. Don't include anything inside the () in the json key.
 
-If the description is close use it.
+If the json key description closely matches with a lease item, but not quite use it. Do not add keys or columns
 
 DO NOT CHANGE THE TITLE OF ANY FIELDS
 
