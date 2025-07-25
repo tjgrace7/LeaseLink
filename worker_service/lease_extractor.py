@@ -300,7 +300,10 @@ Items in () describe the item being searched for do not include in json response
 
 DO NOT CHANGE THE TITLE OF ANY FIELDS
 
-If json key is N/A just exclude
+Return ONLY a valid JSON object. 
+DO NOT include any additional explanation, commentary, or fields. 
+DO NOT include null values. 
+Any output that violates this will be rejected.
 """
         print("prompt")
         chat_response = chatGPT.chat.completions.create(
@@ -309,7 +312,7 @@ If json key is N/A just exclude
                 {"role": "system", "content": "You are a leasing document analyzer. Output only valid JSON."},
                 {"role": "user", "content": prompt}
             ],
-            temperature = 0.2
+            temperature = 0
         )
         try:
             json_start=chat_response.choices[0].message.content.find("{")

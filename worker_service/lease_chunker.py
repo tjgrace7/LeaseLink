@@ -87,7 +87,7 @@ def chunk(text):
 
 # (Keep corrections, apply_corrections, is_gibberish, clean_ocr_text, and chunk as-is)
 
-def process_page(pdf, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, qdrant_client, lease_id, bucket, file_path, dry_run=False):
+def process_page(pdf, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, qdrant_client, job_id, bucket, file_path, dry_run=False):
     try:
         batch_size = 10
         memory_max = 1000
@@ -122,7 +122,7 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
             time.sleep(5)
             
         if mem_mb > memory_max:
-            Clear_Uploads(lease_id, bucket, file_path, 'Memory over 1 gigabyte')
+            Clear_Uploads(job_id, bucket, file_path, 'Memory over 1 gigabyte')
 
         vectors = []
         for chunk_index, chunk_text in enumerate(chunks):
@@ -163,7 +163,7 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
         print(f"Error processing page {page_number + 1}: {e}")
         return []
 
-def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, lease_id, bucket, file_path, qdrant_client):
+def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, job_id, bucket, file_path, qdrant_client):
     reader = ''
     try:
         reader = PdfReader(BytesIO(pdf))
@@ -190,7 +190,7 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
                     source_doc_name,
                     company_id,
                     qdrant_client,
-                    lease_id,
+                    job_id,
                     bucket,
                     file_path
                 )
@@ -205,7 +205,7 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
         return total_pages
     except Exception as e:
         print("Error Getting Vector. Deleting Files from supabase", e)
-        Clear_Uploads(lease_id, bucket, file_path, e)
+        Clear_Uploads(job_id, bucket, file_path, e)
 
 
 
