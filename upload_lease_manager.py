@@ -58,6 +58,5 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         del qdrant_client
         del upload_session_id
         del pdf_file
-        del vectors
         del total_pages
 

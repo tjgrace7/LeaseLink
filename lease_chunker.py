@@ -90,7 +90,8 @@ def chunk(text):
 @profile
 def process_page(pdf, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, qdrant_client, lease_id, bucket, file_path, dry_run=False):
     try:
-        batch_size = 5
+        batch_size = 10
+        memory_max = 1000
         # Extract only this page from the PDF
         reader = PdfReader(BytesIO(pdf))
         writer = PdfWriter()
@@ -121,9 +122,8 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
             print("High Memory Detected > 450mb. Slowing Down Further")
             time.sleep(5)
             
-        if mem_mb > 1000:
+        if mem_mb > memory_max:
             Clear_Uploads(lease_id, bucket, file_path, 'Memory over 1 gigabyte')
-
 
         vectors = []
         for chunk_index, chunk_text in enumerate(chunks):
@@ -146,6 +146,7 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
                 company_id
             )
             vectors.append(vector_data)
+            print(len(vectors))
             #Uploades Vectors into qdrant once 10 or more are active
             if len(vectors) >= batch_size:
                 print("Uploading to Qdrant")
@@ -202,7 +203,7 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
                 all_vectors.extend(result)
 
         print("Image to Text success")
-        return all_vectors, total_pages
+        return total_pages
     except Exception as e:
         print("Error Getting Vector. Deleting Files from supabase", e)
         Clear_Uploads(lease_id, bucket, file_path, e)
