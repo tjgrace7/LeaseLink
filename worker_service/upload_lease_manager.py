@@ -1,9 +1,8 @@
 from dotenv import load_dotenv  
-import lease_extractor
+from . import lease_extractor
 import uuid
 import json
-from supabase import create_client
-import lease_chunker
+from . import lease_chunker
 import common.Supabase_api as Supabase_api
 from common.cleanup_utils import Clear_Uploads
 

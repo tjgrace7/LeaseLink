@@ -2,7 +2,7 @@ import gc
 from pdf2image import convert_from_bytes 
 from pytesseract import image_to_string
 import re
-import embed_files
+from . import embed_files
 from concurrent.futures import ThreadPoolExecutor
 import psutil, os
 from io import BytesIO

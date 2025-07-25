@@ -60,8 +60,8 @@ Here is the lease text:
 - "other"
 
 **Task 2:** Extract the following fields if available:
-- effective_date
-- execution_date
+- effective_date (Must be in yyyy/mm/dd. Omit if not)
+- execution_date (Must be in yyyy/mm/dd. Omit if not)
 - term
 - current_rent
 - rent_increase
@@ -73,12 +73,12 @@ Here is the lease text:
 - state_of_registration
 - mailing_address
 - details
-- lease_execution_date (the Day the lease was signed)
-- lease_commencement_date (The Day the Lease takes effect)
+- lease_execution_date (the Day the lease was signed, Must be in yyyy/mm/dd. Omit if not)
+- lease_commencement_date (The Day the Lease takes effect, Must be in yyyy/mm/dd. Omit if not)
 - Property_Address
 - suite_identifier (The number or letter of the suite without the address)
 - lease_type (NNN, Gross, Percentage)
-- lease_expiration_date
+- lease_expiration_date (Must be in yyyy/mm/dd. Omit if not)
 - lease_term
 - base_rent_monthly
 - rent_escalation
@@ -91,12 +91,12 @@ Here is the lease text:
 - property_taxes
 - insurance_costs
 - tenant_reimbursements
-- rent_abatement_end (the date where the tenants rent abatement runs out.)
-- rent_commencement_date
-- renewal_notice_deadline
-- CAM_start_date
+- rent_abatement_end (the date where the tenants rent abatement runs out, Must be in yyyy/mm/dd. Omit if not)
+- rent_commencement_date (Must be in yyyy/mm/dd. Omit if not)
+- renewal_notice_deadline 
+- CAM_start_date (Must be in yyyy/mm/dd. Omit if not)
 - option_exercise_deadlines (The time in which the tenant must have accepted the option to renew)
-- delivery_possession_date (The day the tenants may access the space)
+- delivery_possession_date (The day the tenants may access the space, Must be in yyyy/mm/dd. Omit if not)
 - renewal_options
 - termination_rights
 - expansion_contraction_rights (The provisions that allow the tenant to grow into more space or shrink out of other space.)
