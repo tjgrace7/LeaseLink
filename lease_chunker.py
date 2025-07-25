@@ -141,7 +141,10 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
             )
             vectors.append(vector_data)
             del vector_data
-        del image
+        image.close()
+        del image, gray, binary
+        import gc
+        gc.collect()
 
         return vectors
 

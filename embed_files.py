@@ -10,6 +10,7 @@ def EmbedFiles(client, chunk, tenantid, propertymanagerid, propertyid,unitid, up
         tenantid= ""
     #Uses openAI embeding to embed chunks
     try:
+        chunk = chunk.strip()
         response = client.embeddings.create(
             input=chunk,
             model="text-embedding-3-large"
