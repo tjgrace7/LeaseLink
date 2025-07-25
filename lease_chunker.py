@@ -6,7 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import psutil, os
 from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
-
+import time
 
 corrections = {
     "Shail":"Shall",
@@ -107,7 +107,18 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
         chunks = chunk(clean_text)
 
         print(f"Processed page {page_number + 1}")
-        print('Memory (MB):', psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2)
+        mem_mb = psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2
+        print('Memory (MB):', mem_mb)
+
+        if mem_mb > 350:
+            print("High Memory detected. Slowing Down")
+            time.sleep(2)
+        if mem_mb > 450:
+            print("High Memory Detected > 450mb. Slowing Down Further")
+            time.sleep(5)
+            
+
+
 
         vectors = []
         for chunk_index, chunk_text in enumerate(chunks):
@@ -127,15 +138,15 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
                 company_id
             )
             vectors.append(vector_data)
-            del text
-            del clean_text
-            del chunks
-            del reader
-            del writer 
-            del single_page_pdf
-            del image
-            del gray
-            del binary
+        del text
+        del clean_text
+        del chunks
+        del reader
+        del writer 
+        del single_page_pdf
+        del image
+        del gray
+        del binary
 
         return vectors
 

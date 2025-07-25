@@ -34,30 +34,33 @@ def supabase_post_request(supabase_client, data: dict, table: str):
 
 # ✅ Download PDF file from Supabase Storage
 def download_file(supabase_client, bucket_name: str, file_path: str):
-    print("Downloading_file")
-    #Gets file_basename
-    storage = supabase_client.storage.from_(bucket_name)
-    #Gets file bytes from stored location in supabase
+    try:
+        print("Downloading_file")
+        #Gets file_basename
+        storage = supabase_client.storage.from_(bucket_name)
+        #Gets file bytes from stored location in supabase
 
-    file_bytes = storage.download(file_path)
-    if file_bytes:
+        file_bytes = storage.download(file_path)
+        
         print("file_bytest returned!")
         #returns file_bytes
         return file_bytes
         
-    else:
-        print("❌ Download failed")
+    except Exception as e:
+        print("❌ Download failed", e)
         return None
 
 
 def get_signed_url(supabase_client, bucket, file_path):
     print("get signed url")
     if file_path != None:
-        response = supabase_client.storage.from_(bucket).create_signed_url(file_path, expires_in=3600)
-        signed_url = response["signedURL"]
+        try:
+            response = supabase_client.storage.from_(bucket).create_signed_url(file_path, expires_in=3600)
+            signed_url = response["signedURL"]
 
-        print("Signed URL:", signed_url)
-        
+            print("Signed URL:", signed_url)
+        except Exception as e:
+            print("Error getting signed URL", e)
     else:
         signed_url = ""
     return signed_url
