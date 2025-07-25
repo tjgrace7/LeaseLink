@@ -87,8 +87,9 @@ def chunk(text):
 # (Keep corrections, apply_corrections, is_gibberish, clean_ocr_text, and chunk as-is)
 
 @profile
-def process_page(pdf, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id):
+def process_page(pdf, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, dry_run=False):
     try:
+        
         # Extract only this page from the PDF
         reader = PdfReader(BytesIO(pdf))
         writer = PdfWriter()
@@ -126,6 +127,9 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
         for chunk_index, chunk_text in enumerate(chunks):
             if not isinstance(chunk_text, str) or not chunk_text.strip():
                 continue
+            if dry_run:
+                print(f"[Dry Run] Page {page_number+1} - Chunk {chunk_index}: {chunk_text[:80]}...\n")
+                continue
             vector_data = embed_files.EmbedFiles(
                 client,
                 chunk_text,
@@ -152,7 +156,6 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
         print(f"Error processing page {page_number + 1}: {e}")
         return []
 
-@profile
 def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, lease_id, bucket, file_path):
     reader = ''
     try:
@@ -178,7 +181,8 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
                     unit_id,
                     upload_session_id,
                     source_doc_name,
-                    company_id
+                    company_id,
+                    dry_run = True
                 )
                 for page_number in range(total_pages)
             ]
