@@ -70,7 +70,8 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
 sys.excepthook = handle_exception
 
-def signal_handler(sig):
+#Do not remove frame. required for signal handler
+def signal_handler(sig, frame):
     print(f"Received Signal: {sig}")
     sys.exit(0)
 
