@@ -5,6 +5,8 @@ from datetime import datetime
 import re
 import tiktoken
 import Supabase_api
+from memory_profiler import profile
+from upload_lease_manager import Clear_Uploads
 
 
 #Clears entire qdrant collection **FOR TESTING ONLY**
@@ -16,6 +18,7 @@ def clear_collection(q_client, collection_Name):
     )
     print("Qdrant cleared")
 
+@profile
 def extract_json_from_response(response_text: str):
     #Find everything between ```json and ```
     match = re.search(r"```json\s*(.*?)\s*```", response_text, re.DOTALL)
@@ -229,32 +232,41 @@ Use this format exactly:
 
 
 def get_relevant_chunks_from_lease(collection_Name, q_client, chatGPT, session_id, top_k=30) -> dict:
+    try:
         #ChatGPT analysis lease to determine lease type, effective, and execution dates prompt below
-    query = "Classify this lease and extract key details like term, rent, maintenance, taxes, rent increases, maintenance terms, insurance, CAMS, square-footage, state-of-registration, mailing address, effective date, and execution date"
-    print("Get_relevant_chunk_from_lease_inner_function")
-    prompt_embed = chatGPT.embeddings.create(
-        input=query,
-        model="text-embedding-3-large"
-    )
-    encoding = tiktoken.encoding_for_model("text-embedding-3-large")
-    embedding_token_count = len(encoding.encode(query))
-    embeddingcost = embedding_token_count*.00000013
-    query_vector = prompt_embed.data[0].embedding
-    results = q_client.search(
-        collection_name = collection_Name,
-        query_vector = query_vector,
-        limit = top_k,
-        with_payload=True,
-        with_vectors=False,
-        query_filter=Filter(
-            must=[FieldCondition(key="session_id", match=MatchValue(value=session_id))]
-        )
-    )
-    if not results:
-        raise ValueError(f"No Chunks found for session_id: {session_id}")
+        query = "Classify this lease and extract key details like term, rent, maintenance, taxes, rent increases, maintenance terms, insurance, CAMS, square-footage, state-of-registration, mailing address, effective date, and execution date"
+        print("Get_relevant_chunk_from_lease_inner_function")
+        query_vector = ''
+        try:
 
-    context = "\n\n".join([r.payload.get("text", "") for r in results])
-    prompt = f"""
+            prompt_embed = chatGPT.embeddings.create(
+                input=query,
+                model="text-embedding-3-large"
+            )
+            encoding = tiktoken.encoding_for_model("text-embedding-3-large")
+            embedding_token_count = len(encoding.encode(query))
+            embeddingcost = embedding_token_count*.00000013
+            query_vector = prompt_embed.data[0].embedding
+        except Exception as e:
+            print("Error Embedding file", e)
+        results = []
+        try:
+            results = q_client.search(
+                collection_name = collection_Name,
+                query_vector = query_vector,
+                limit = top_k,
+                with_payload=True,
+                with_vectors=False,
+                query_filter=Filter(
+                    must=[FieldCondition(key="session_id", match=MatchValue(value=session_id))]
+                )
+            )
+            if not results:
+                raise ValueError(f"No Chunks found for session_id: {session_id}")
+        except Exception as e:
+            print("Error Getting Response from Qdrant")
+        context = "\n\n".join([r.payload.get("text", "") for r in results])
+        prompt = f"""
 Here is the lease text:
 {context}
 
@@ -349,30 +361,35 @@ Here is the lease text:
 Respond only with a JSON object. Do not add null values. Omit missing fields. Do not include any text outside the JSON object. **Do not add fields that may apply. Only send keys that are listed above. Errors will occur if extra fields send** Dates must be formatted as yyyy/mm/dd. Dates not in this format will fail (Omit if not complete)
 Items in () describe the item being searched for do not include in json response,
 
+DO NOT CHANGE THE TITLE OF ANY FIELDS
+
 If json key is N/A just exclude
 """
-    print("prompt")
-    chat_response = chatGPT.chat.completions.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You are a leasing document analyzer. Output only valid JSON."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature = 0.2
-    )
-    try:
-        json_start=chat_response.choices[0].message.content.find("{")
-        token_usage = chat_response.usage
-        prompt_tokens = token_usage.prompt_tokens
-        prompt_cost = (prompt_tokens/1000*.01) + (embedding_token_count/1000*.00013)
-        completion_tokens = token_usage.completion_tokens
-        completion_cost = completion_tokens/1000*.03
-        print("json_start:", json_start)
-        total_cost = prompt_cost + completion_cost + embeddingcost
-        json_string=chat_response.choices[0].message.content[json_start:]
-        print("json_string:", json_string)
-        del prompt_tokens, prompt_cost, completion_tokens, completion_cost, prompt, context, results, query_vector,  
-        return json.loads(json_string), total_cost
+        print("prompt")
+        chat_response = chatGPT.chat.completions.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a leasing document analyzer. Output only valid JSON."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature = 0.2
+        )
+        try:
+            json_start=chat_response.choices[0].message.content.find("{")
+            token_usage = chat_response.usage
+            prompt_tokens = token_usage.prompt_tokens
+            prompt_cost = (prompt_tokens/1000*.01) + (embedding_token_count/1000*.00013)
+            completion_tokens = token_usage.completion_tokens
+            completion_cost = completion_tokens/1000*.03
+            print("json_start:", json_start)
+            total_cost = prompt_cost + completion_cost + embeddingcost
+            json_string=chat_response.choices[0].message.content[json_start:]
+            print("json_string:", json_string)
+            del prompt_tokens, prompt_cost, completion_tokens, completion_cost, prompt, context, results, query_vector,  
+            return json.loads(json_string), total_cost
+        except Exception as e:
+            print("Failed to parse JSON:", chat_response.choices[0].message.content)
+            raise e
     except Exception as e:
-        print("Failed to parse JSON:", chat_response.choices[0].message.content)
+        print("Error Parsing Lease", e)
         raise e

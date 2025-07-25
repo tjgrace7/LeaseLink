@@ -7,6 +7,8 @@ import psutil, os
 from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
 import time
+from memory_profiler import profile
+from upload_lease_manager import Clear_Uploads
 
 corrections = {
     "Shail":"Shall",
@@ -84,7 +86,7 @@ def chunk(text):
 
 # (Keep corrections, apply_corrections, is_gibberish, clean_ocr_text, and chunk as-is)
 
-
+@profile
 def process_page(pdf, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id):
     try:
         # Extract only this page from the PDF
@@ -154,39 +156,48 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
         print(f"Error processing page {page_number + 1}: {e}")
         return []
 
-def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id):
-    reader = PdfReader(BytesIO(pdf))
-    total_pages = len(reader.pages)
-
+@profile
+def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, lease_id, bucket, file_path):
+    reader = ''
+    try:
+        reader = PdfReader(BytesIO(pdf))
+        total_pages = len(reader.pages)
+    except Exception as e:
+        print("Could not read pages", e)
     print("Processing each page with threading (one at a time in memory)")
 
     all_vectors = []
     #Runs each images converted from bytes on seperate thread for efficiency and speed
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = [
-            executor.submit(
-                process_page,
-                pdf,  # Full byte stream
-                page_number,
-                client,
-                tenantid,
-                propertymanagerid,
-                propertyid,
-                unit_id,
-                upload_session_id,
-                source_doc_name,
-                company_id
-            )
-            for page_number in range(total_pages)
-        ]
+    try:
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            futures = [
+                executor.submit(
+                    process_page,
+                    pdf,  # Full byte stream
+                    page_number,
+                    client,
+                    tenantid,
+                    propertymanagerid,
+                    propertyid,
+                    unit_id,
+                    upload_session_id,
+                    source_doc_name,
+                    company_id
+                )
+                for page_number in range(total_pages)
+            ]
         for future in futures:
             result = future.result()
             if result:
                 all_vectors.extend(result)
 
-    print("Image to Text success")
-    del reader
-    return all_vectors, total_pages
+        print("Image to Text success")
+        del reader
+        return all_vectors, total_pages
+    except Exception as e:
+        print("Error Getting Vector. Deleting Files from supabase", e)
+        Clear_Uploads(lease_id, bucket, file_path, e)
+
 
 
 

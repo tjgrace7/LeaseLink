@@ -46,3 +46,5 @@ typing_extensions==4.14.0
 
 psutil
 PyPDF2==3.0.1
+
+memory-profiler==0.61.0

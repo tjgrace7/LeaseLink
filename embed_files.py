@@ -1,20 +1,25 @@
 from datetime import datetime
 from uuid import uuid4
 from qdrant_client.models import PointStruct
+from memory_profiler import profile
 
 #Takes Chunked Text and embeds files with openai embedding
+@profile
 def EmbedFiles(client, chunk, tenantid, propertymanagerid, propertyid,unitid, upload_session_id, pagenumber, sourcedocname, chunkindex, company_id):
     #If creating a tenant, sets tenant id null
     if tenantid is None:
         tenantid= ""
     #Uses openAI embeding to embed chunks
-    response = client.embeddings.create(
-        input=chunk,
-        model="text-embedding-3-large"
-    )
-    #Gets embedded vector from openai
-    vector = response.data[0].embedding
-    #prepares payload for vector db
+    try:
+        response = client.embeddings.create(
+            input=chunk,
+            model="text-embedding-3-large"
+        )
+        #Gets embedded vector from openai
+        vector = response.data[0].embedding
+        #prepares payload for vector db
+    except Exception as e:
+        print("Error Embedding Files", e)
     return PointStruct(
         id=str(uuid4()),
         vector = vector,
@@ -31,5 +36,6 @@ def EmbedFiles(client, chunk, tenantid, propertymanagerid, propertyid,unitid, up
             "source_id" : f"{upload_session_id}_{tenantid}_{sourcedocname}_{pagenumber}_{chunkindex}",
             "managementcompany_id" : company_id,
             "highlight_id" : str(uuid4())
-        }
-    )
+        })
+   
+    
