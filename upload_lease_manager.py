@@ -66,7 +66,6 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         Clear_Uploads(lease_id, bucket_name, get_pdf, e)
     finally:
         del supabase_client
-        del lease_data
         del extracted_lease_data
         del qdrant_client
         del upload_session_id
