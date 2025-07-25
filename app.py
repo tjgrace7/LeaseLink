@@ -118,7 +118,7 @@ def export_lease(job_id, lease_request):
             supabase_client
         )
 
-        job_status[job_id] = "done"
+        job_status[job_id]["status"] = "done"
     except Exception as e:
 
         lease_id = lease_request.get("lease_document_id")
@@ -126,12 +126,18 @@ def export_lease(job_id, lease_request):
         file_path = lease_request.get("file_path")
         upload_lease_manager.Clear_Uploads(lease_id, bucket, file_path, e)
         #Add Database update with error status
-        job_status[job_id] = f"error: {str(e)}"
+        job_status[job_id]["error"] = str(e)
         print(f"Error processing job {job_id}: {e}")
 @app.get("/")
 def root():
     return {"message": "API is running"}
 @app.head("/")
+@app.get('/job-status/{job_id}')
+def get_job_status(job_id: str):
+    status = job_status.get(job_id)
+    if not status:
+        return {"Status": "unknown"}
+    return status
 @app.post("/process-lease")
 async def process_file(request: Request, authorization: Optional[str] = Header(default=None)):
     job_id = str(uuid.uuid4())
