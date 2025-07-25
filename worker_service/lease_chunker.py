@@ -122,7 +122,7 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
             time.sleep(5)
             
         if mem_mb > memory_max:
-            Clear_Uploads(job_id, bucket, file_path, 'Memory over 1 gigabyte')
+            Clear_Uploads(job_id, bucket, file_path)
 
         vectors = []
         for chunk_index, chunk_text in enumerate(chunks):
@@ -205,7 +205,7 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
         return total_pages
     except Exception as e:
         print("Error Getting Vector. Deleting Files from supabase", e)
-        Clear_Uploads(job_id, bucket, file_path, e)
+        Clear_Uploads(job_id, bucket, file_path)
 
 
 

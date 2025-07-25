@@ -2,24 +2,26 @@ from supabase import create_client
 import os
 import requests
 from qdrant_client import QdrantClient
+from ..app import get_job_status
 from qdrant_client.http.models import  Filter, FieldCondition, MatchValue
 
-def Clear_Uploads(job_id, bucket, file_path, error):
+def Clear_Uploads(job_id, bucket, file_path):
         supabaseurl = os.getenv("SUPABASE_URL")
         service_key = os.getenv("SUPABASE_SERVICE_API_KEY")
         supabase = create_client(supabaseurl, service_key)
 
 
+        try:
+            url = f"{supabaseurl}/storage/v1/object/{bucket}/{file_path}"
 
-        url = f"{supabaseurl}/storage/v1/object/{bucket}/{file_path}"
 
-
-        headers = {
-            "apikey": service_key,
-            "Authorization": f"Bearer {service_key}"
-        }
-        supabase.table("Upload_Job_Status").update({"status": "error", "error_message": str(error)}).eq("job_id", job_id).execute()
-
+            headers = {
+                "apikey": service_key,
+                "Authorization": f"Bearer {service_key}"
+            }
+            supabase.table("Upload_Job_Status").update({"job_info": get_job_status(job_id)}).eq("job_id", job_id).execute()
+        except Exception as e:
+             print("Error updating Upload:" )
         response = requests.delete(url, headers=headers)
         qdrant_client = QdrantClient(
             url = os.getenv("QDRANT_URL"),

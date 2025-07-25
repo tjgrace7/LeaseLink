@@ -57,10 +57,10 @@ def job_worker():
             bucket = lease_request.get("bucket")
             file_path = lease_request.get("file_path")
             
-            upload_lease_manager.Clear_Uploads(job_id, bucket, file_path, e)
+            upload_lease_manager.Clear_Uploads(job_id, bucket, file_path)
         finally:
             job_queue.task_done()
-            supabase_client.table('Upload_Job_Status').update({"status": job_status[job_id]}).eq('job_id', job_id).execute()
+            supabase_client.table('Upload_Job_Status').update({"job_info": job_status[job_id]}).eq('job_id', job_id).execute()
 
 for _ in range(MAX_WORKERS):
     t = threading.Thread(target = job_worker, daemon=True)
@@ -123,10 +123,9 @@ def export_lease(job_id, lease_request):
 
     except Exception as e:
 
-        lease_id = lease_request.get("lease_document_id")
         bucket = lease_request.get("bucket")
         file_path = lease_request.get("file_path")
-        upload_lease_manager.Clear_Uploads(job_id, bucket, file_path, e)
+        upload_lease_manager.Clear_Uploads(job_id, bucket, file_path)
         print(f"Error processing job {job_id}: {e}")
 @app.get("/")
 def root():
@@ -159,7 +158,7 @@ async def process_file(request: Request, authorization: Optional[str] = Header(d
     except Exception as e:
         print(f"[{job_id}] Failed to queue job: {e}")
         job_status[job_id] = {"status": "error", "error": str(e), "result": None}
-        supabase_client.table('Upload_Job_Status').update({"status": job_status[job_id]}).eq('job_id', job_id).execute()
+        supabase_client.table('Upload_Job_Status').update({"job_info": job_status[job_id]}).eq('job_id', job_id).execute()
         raise HTTPException(status_code=500, detail=f"Queue failed: {e}")
 
     return {
