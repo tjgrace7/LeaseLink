@@ -146,7 +146,7 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
             vectors.append(vector_data)
             del vector_data
         image.close()
-        del image, gray, binary
+        del image#, gray, binary
         import gc
         gc.collect()
 
@@ -181,8 +181,7 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
                     unit_id,
                     upload_session_id,
                     source_doc_name,
-                    company_id,
-                    dry_run = True
+                    company_id
                 )
                 for page_number in range(total_pages)
             ]
