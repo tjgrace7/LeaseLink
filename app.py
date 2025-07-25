@@ -163,7 +163,7 @@ async def process_file(request: Request, authorization: Optional[str] = Header(d
         raise HTTPException(status_code=500, detail=f"Queue failed: {e}")
 
     return {
-        "status": "queued",
+        "status": job_status[job_id],
         "job_id": job_id
     }
 

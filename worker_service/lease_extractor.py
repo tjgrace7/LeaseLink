@@ -296,14 +296,13 @@ Here is the lease text:
 
 
 Respond only with a JSON object. Do not add null values. Omit missing fields. Do not include any text outside the JSON object. **Do not add fields that may apply. Only send keys that are listed above. Errors will occur if extra fields send** Dates must be formatted as yyyy/mm/dd. Dates not in this format will fail (Omit if not complete)
-Items in () describe the item being searched for do not include in json response,
+
+Items in () describe the item being searched for. Don't include anything inside the () in the json key.
+
+If the description is close use it.
 
 DO NOT CHANGE THE TITLE OF ANY FIELDS
 
-Return ONLY a valid JSON object. 
-DO NOT include any additional explanation, commentary, or fields. 
-DO NOT include null values. 
-Any output that violates this will be rejected.
 """
         print("prompt")
         chat_response = chatGPT.chat.completions.create(
@@ -312,7 +311,7 @@ Any output that violates this will be rejected.
                 {"role": "system", "content": "You are a leasing document analyzer. Output only valid JSON."},
                 {"role": "user", "content": prompt}
             ],
-            temperature = 0
+            temperature = 0.2
         )
         try:
             json_start=chat_response.choices[0].message.content.find("{")
