@@ -2,23 +2,22 @@ from fastapi import FastAPI, Request, Header, HTTPException
 from typing import Optional
 import os
 import uuid
-import upload_lease_manager
-import Qdrant_ChatGPT
-import Supabase_api
+from worker_service import upload_lease_manager
+from web_api import Qdrant_ChatGPT
+import common.Supabase_api as Supabase_api
 from dotenv import load_dotenv
 import threading
 from openai import OpenAI
 from qdrant_client import QdrantClient
-from supabase import create_client
 import jwt
-import Supabase_api
+import common.Supabase_api as Supabase_api
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse  # ✅ Add this
 import sys
 import traceback
 import signal
 from queue import Queue
-import threading, time
+import threading
 
 
 app = FastAPI()
@@ -47,12 +46,17 @@ def job_worker():
         job_id, lease_request = job_queue.get()
         try:
             print(f"[{job_id}] Starting Job")
+            job_status[job_id]["status"] = 'in_progress'
             export_lease(job_id, lease_request)
             job_status[job_id]["status"] = "done"
         except Exception as e:
             print(f"[{job_id}] Job failed: {e}")
             job_status[job_id]["status"] = "error"
             job_status[job_id]["error"] = str(e)
+            lease_id = lease_request.get("lease_document_id")
+            bucket = lease_request.get("bucket")
+            file_path = lease_request.get("file_path")
+            upload_lease_manager.Clear_Uploads(lease_id, bucket, file_path, e)
         finally:
             job_queue.task_done()
 
@@ -66,7 +70,7 @@ def handle_exception(exc_type, exc_value, exc_traceback):
 
 sys.excepthook = handle_exception
 
-def signal_handler(sig, frame):
+def signal_handler(sig):
     print(f"Received Signal: {sig}")
     sys.exit(0)
 

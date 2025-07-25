@@ -1,11 +1,11 @@
 from dotenv import load_dotenv  
-import lease_chunker
+import lease_extractor
 import uuid
-import Qdrant_ChatGPT
 import json
 from supabase import create_client
-import Supabase_api
-from cleanup_utils import Clear_Uploads
+import lease_chunker
+import common.Supabase_api as Supabase_api
+from common.cleanup_utils import Clear_Uploads
 
 
 
@@ -25,7 +25,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
     try:
         print("starting extraction")
         #Sends message to ChatGPT to extract needed data from lease
-        extracted_lease_data, total_cost = Qdrant_ChatGPT.get_relevant_chunks_from_lease(collectionName, qdrant_client, OpenAIclient, upload_session_id)
+        extracted_lease_data, total_cost = lease_extractor.get_relevant_chunks_from_lease(collectionName, qdrant_client, OpenAIclient, upload_session_id)
 
         if isinstance(extracted_lease_data, str):
             #if returned as string converts to json

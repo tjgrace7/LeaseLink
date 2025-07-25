@@ -9,7 +9,7 @@ from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
 import time
 from memory_profiler import profile
-from cleanup_utils import Clear_Uploads
+from common.cleanup_utils import Clear_Uploads
 
 corrections = {
     "Shail":"Shall",
