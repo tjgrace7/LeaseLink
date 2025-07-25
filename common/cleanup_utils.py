@@ -18,7 +18,7 @@ def Clear_Uploads(job_id, bucket, file_path, error):
             "apikey": service_key,
             "Authorization": f"Bearer {service_key}"
         }
-        supabase.table("Upload_Job_Status").update({"status": "error", "error_message": error}).eq("job_id", job_id).execute()
+        supabase.table("Upload_Job_Status").update({"status": "error", "error_message": str(error)}).eq("job_id", job_id).execute()
 
         response = requests.delete(url, headers=headers)
         qdrant_client = QdrantClient(
