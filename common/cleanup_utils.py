@@ -2,7 +2,7 @@ from supabase import create_client
 import os
 import requests
 from qdrant_client import QdrantClient
-from ..app import get_job_status
+from app import get_job_status
 from qdrant_client.http.models import  Filter, FieldCondition, MatchValue
 
 def Clear_Uploads(job_id, bucket, file_path):
