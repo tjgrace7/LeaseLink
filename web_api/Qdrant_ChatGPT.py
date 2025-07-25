@@ -9,14 +9,7 @@ from memory_profiler import profile
 
 
 
-#Clears entire qdrant collection **FOR TESTING ONLY**
-def clear_collection(q_client, collection_Name):
-    q_client.delete(
-        collection_name=collection_Name,
-        points_selector=Filter(must=[])
-        
-    )
-    print("Qdrant cleared")
+
 
 @profile
 def extract_json_from_response(response_text: str):
@@ -36,7 +29,6 @@ def extract_json_from_response(response_text: str):
 def get_relevant_chunks(collection_Name, q_client, filtertype1, filterid1, company_id, message, openAI, oldData, supabase_client):
     print("get_relevant_chunks")
     now = datetime.now()
-
     prompt_tokens = 0
     prompt_cost = 0 
     completion_tokens = 0 

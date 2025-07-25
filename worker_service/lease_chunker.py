@@ -87,7 +87,6 @@ def chunk(text):
 
 # (Keep corrections, apply_corrections, is_gibberish, clean_ocr_text, and chunk as-is)
 
-@profile
 def process_page(pdf, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, qdrant_client, lease_id, bucket, file_path, dry_run=False):
     try:
         batch_size = 10

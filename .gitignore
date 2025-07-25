@@ -27,3 +27,5 @@ poppler/
 
 #VS Code settings
 .vscode/
+
+/scripts/
