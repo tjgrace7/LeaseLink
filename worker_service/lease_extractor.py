@@ -240,58 +240,58 @@ Here is the lease text:
 - Property_Address
 - suite_identifier (The number or letter of the suite without the address)
 - lease_type (NNN, Gross, Percentage)
-- lease_expiration_date
-- lease_term
-- base_rent_monthly
-- rent_escalation
-- security_deposit_amount
+- lease_expiration_date (Day that the lease ends before any options to renew.)
+- lease_term (Length of lease in years/ months)
+- base_rent_monthly (Amount of rent for the building before expenses)
+- rent_escalation (The rent increase within the current term of the lease)
+- security_deposit_amount (The amount the rent has to put as a "down payment" to hold there space. Is paid back at the end of the lease if the property is left in good condition.)
 - base_rent_psf (The Per Square Foot Base Rent (Annual Rent / SF))
-- base_rent_annually
+- base_rent_annually (Base rent amount paid across 12 months)
 - operating_expenses_CAM_psf (CAM expenses per square foot)
-- operating_expenses_CAM_monthly
-- CAM_Summary
-- property_taxes
-- insurance_costs
-- tenant_reimbursements
+- operating_expenses_CAM_monthly (Monthly estimated amount that tenants are pay in all expenses they are responsible for via the lease)
+- CAM_Summary (A summary of the Common Area Maintenance and who is responsible for expenses.)
+- property_taxes (A summary of who has responsibility to pay the property taxes for the building.)
+- insurance_costs (A summary of insurance expectations for both the tenant and the Landlord.)
+- tenant_reimbursements (A summary of the system in which the landlord is able to bill the tenant for expenses they initially paid for or the rights in which the tenants have to recoup the money in which they overpaid for building expenses.)
 - rent_abatement_end (the date where the tenants rent abatement runs out.)
-- rent_commencement_date
-- renewal_notice_deadline
-- CAM_start_date
+- rent_commencement_date (Date that rent starts)
+- renewal_notice_deadline (The amount of time before the lease expires that the tenant has to let the landlord know they are interested in renewing)
+- CAM_start_date (The date in which the tenant is responsible for paying estimated CAM amounts)
 - option_exercise_deadlines (The time in which the tenant must have accepted the option to renew)
 - delivery_possession_date (The day the tenants may access the space)
-- renewal_options
-- termination_rights
+- renewal_options (The amount of options the tenant has and the terms that change upon the commencement of these options.)
+- termination_rights (Any terms that allow either party to terminate the lease early.)
 - expansion_contraction_rights (The provisions that allow the tenant to grow into more space or shrink out of other space.)
-- co_tenancy_clauses
-- purchase_option
+- co_tenancy_clauses (Obligations that must be met by the landlord in accordance to other tenants and if not met the consequences.)
+- purchase_option (Options the tenant has to purchase the building in within the terms of the lease.)
 - rentable_square_footage (Useable SF + share of common areas (hallways, restrooms, etc.))
 - usable_square_footage (The amount of square footage the tenant occupies)
-- premises_description
-- parking_allocation
-- storage_additional_space
-- tenant_maintenance_responsibilities
-- landlord_maintenance_responsibilities
-- hvac_responsibilities
-- utility_responsibilities
+- premises_description (Gives a more general and knowledgeable description of the rentable area)
+- parking_allocation (How much parking the tenant gets.)
+- storage_additional_space (If any storage is allotted or additional space is allotted to the tenant)
+- tenant_maintenance_responsibilities (Tenant's maintenance responsibilities.)
+- landlord_maintenance_responsibilities (Landlord's Maintenance Responsibilities)
+- hvac_responsibilities (The HVAC responsibilities in detail)
+- utility_responsibilities (Utility Responsibility in detail)
 - default_and_remedies (The actions and ability to take actions of either part in the event of default by the other.)
 - assignment_and_subletting (What is permissible by the tenant if they desire to assign the lease or sublet the space.)
-- insurance_requirements
-- indemnity_clauses
-- compliance_with_laws
-- force_majeure
-- estoppel_certificate_required (Details)
-- signage_rights
-- permitted_use
-- exclusive_use_clause
-- guarantor_information
-- tenant_improvement_allowance
+- insurance_requirements (Insurance requirements for the renters of the space. (General or more probably liability))
+- indemnity_clauses (The landlords protection from being held legally liable for anything. (Tenant can't sue landlord))
+- compliance_with_laws (Tenants responsibility to be compliant with laws, federal and state.)
+- force_majeure (excuses one or both parties from performing their obligations when extraordinary events occur that are outside their control.)
+- estoppel_certificate_required (The requirement that tenants answer certain questions in certain occasions. Normally when selling  or refinancing.)
+- signage_rights (What signage rights the tenant has)
+- permitted_use (What the tenant is allowed to use the space for.)
+- exclusive_use_clause (Gives the tenant permission to be the sole operator allowed to do something.)
+- guarantor_information (the details about any person or entity that guarantees the tenant’s obligations under the lease.)
+- tenant_improvement_allowance (The amount the Landlord gives to the tenant to improve the property for the tenants use.)
 - holdover_terms (Terms that apply when the tenant overstays their lease without a renewal.)
-- landlord_work
-- Tenant_work
-- security_deposit_term
+- landlord_work (Work that is the responsibility of the landlord, normally before the tenant moves in.)
+- Tenant_work (The work or improvements that the tenant is held responsible for upon receiving access to the space)
+- security_deposit_term (The terms that define security deposit rules.)
 - ROFR_ROFO_clauses (Right of First Refusal clauses or Right of First Offer clauses)
-- security_access_rights
-- exclusivity_rights
+- security_access_rights (The rights of security and the limits to the landlords access.)
+- exclusivity_rights (Blocks the landlord from allowing any competing business.)
 
 
 

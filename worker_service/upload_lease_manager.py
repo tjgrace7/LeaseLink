@@ -46,6 +46,9 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         lease_data['page_count'] = total_pages
         #upserts lease_data into lease_documents table in supabase
         Supabase_api.supabase_post_request(supabase_client, [lease_data], "lease_documents")
+        supabase_client.table('tenant').update({'Available': True}).eq('tenant_id', tenantid).execute()
+
+        
         print("Success")
 
     except Exception as e:
