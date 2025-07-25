@@ -74,7 +74,7 @@ Here is the lease text:
 - details
 - lease_execution_date (the Day the lease was signed)
 - lease_commencement_date (The Day the Lease takes effect)
-- Property_Address
+- Property_Address (match case)
 - suite_identifier (The number or letter of the suite without the address)
 - lease_type (NNN, Gross, Percentage)
 - lease_expiration_date (Day that the lease ends before any options to renew.)
@@ -148,7 +148,7 @@ DO NOT CHANGE THE TITLE OF ANY FIELDS
                 {"role": "system", "content": "You are a leasing document analyzer. Output only valid JSON."},
                 {"role": "user", "content": prompt}
             ],
-            temperature = 0.2
+            temperature = 0.1
         )
         try:
             json_start=chat_response.choices[0].message.content.find("{")
