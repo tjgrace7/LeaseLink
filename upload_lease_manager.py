@@ -18,21 +18,8 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
     pdf_file = Supabase_api.download_file(supabase_client, bucket_name, get_pdf)
     #Converts pdf to image, then to text, chunks text, embeds text, and converts to json payload for qdrant
     print("Starting PDF text extraction + embedding")
-    vectors, total_pages = lease_chunker.extract_text_from_pdf(pdf_file, OpenAIclient, tenantid, auth_id, propertyid, unit_id,upload_session_id, get_pdf, company_id, lease_id, bucket_name, get_pdf)
-    print (f"Finished Embedding {len(vectors)} chunks from {total_pages} pages")
-    batch_size = 50
-    #Takes embeded leases and upserts in qdrant 
-    for i in range(0, len(vectors), batch_size):
-        #Limits qdrant point load to 50, so it doesn't overload qdrant upload limits
-        batch = vectors[i:i + batch_size]
-        try:
-            qdrant_client.upsert(
-            collection_name=collectionName,
-            wait=True,
-            points = batch
-        )
-        except Exception as e:
-            print(f"Failed on batch {i // batch_size + 1}: {e}")
+    total_pages = lease_chunker.extract_text_from_pdf(pdf_file, OpenAIclient, tenantid, auth_id, propertyid, unit_id,upload_session_id, get_pdf, company_id, lease_id, bucket_name, get_pdf, qdrant_client)
+    print("Finished Embedding Total Page: ", total_pages)
 
 
     try:

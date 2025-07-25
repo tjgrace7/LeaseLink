@@ -1,3 +1,4 @@
+import gc
 from pdf2image import convert_from_bytes 
 from pytesseract import image_to_string
 import re
@@ -87,9 +88,9 @@ def chunk(text):
 # (Keep corrections, apply_corrections, is_gibberish, clean_ocr_text, and chunk as-is)
 
 @profile
-def process_page(pdf, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, dry_run=False):
+def process_page(pdf, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, qdrant_client, lease_id, bucket, file_path, dry_run=False):
     try:
-        
+        batch_size = 5
         # Extract only this page from the PDF
         reader = PdfReader(BytesIO(pdf))
         writer = PdfWriter()
@@ -120,7 +121,8 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
             print("High Memory Detected > 450mb. Slowing Down Further")
             time.sleep(5)
             
-
+        if mem_mb > 1000:
+            Clear_Uploads(lease_id, bucket, file_path, 'Memory over 1 gigabyte')
 
 
         vectors = []
@@ -144,10 +146,15 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
                 company_id
             )
             vectors.append(vector_data)
+            #Uploades Vectors into qdrant once 10 or more are active
+            if len(vectors) >= batch_size:
+                print("Uploading to Qdrant")
+                qdrant_client.upsert(collection_name="Test-Leases", points=vectors)
+                vectors.clear()
+                gc.collect()
             del vector_data
         image.close()
         del image#, gray, binary
-        import gc
         gc.collect()
 
         return vectors
@@ -156,7 +163,7 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
         print(f"Error processing page {page_number + 1}: {e}")
         return []
 
-def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, lease_id, bucket, file_path):
+def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, lease_id, bucket, file_path, qdrant_client):
     reader = ''
     try:
         reader = PdfReader(BytesIO(pdf))
@@ -181,7 +188,11 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
                     unit_id,
                     upload_session_id,
                     source_doc_name,
-                    company_id
+                    company_id,
+                    qdrant_client,
+                    lease_id,
+                    bucket,
+                    file_path
                 )
                 for page_number in range(total_pages)
             ]
@@ -195,7 +206,6 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
     except Exception as e:
         print("Error Getting Vector. Deleting Files from supabase", e)
         Clear_Uploads(lease_id, bucket, file_path, e)
-
 
 
 
