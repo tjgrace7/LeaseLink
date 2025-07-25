@@ -1,12 +1,12 @@
 from dotenv import load_dotenv  
-import os
 import lease_chunker
 import uuid
 import Qdrant_ChatGPT
 import json
 from supabase import create_client
 import Supabase_api
-import requests
+from cleanup_utils import Clear_Uploads
+
 
 
 def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_name, company_id, collectionName, OpenAIclient, qdrant_client, supabase_client):
@@ -74,20 +74,3 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         del vectors
         del total_pages
 
-def Clear_Uploads(lease_id, bucket, file_path, error):
-        supabaseurl = os.getenv("SUPABASE_URL")
-        service_key = os.getenv("SUPABASE_SERVICE_API_KEY")
-        supabase = create_client(supabaseurl, service_key)
-
-        url = f"{supabaseurl}/storage/v1/object/{bucket}/{file_path}"
-
-        headers = {
-            "apikey": service_key,
-            "Authorization": f"Bearer {service_key}"
-        }
-        supabase.table("lease_documents").update({"lease_file_path": f"File Ebed Failed: {error}", "status": "Error"}).eq("lease_id", lease_id).execute()
-        response = requests.delete(url, headers=headers)
-        if response.status_code ==200:
-            print("File Deleted")
-        else:
-            print("Error Deleting File")

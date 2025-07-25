@@ -6,7 +6,7 @@ import re
 import tiktoken
 import Supabase_api
 from memory_profiler import profile
-from upload_lease_manager import Clear_Uploads
+
 
 
 #Clears entire qdrant collection **FOR TESTING ONLY**
