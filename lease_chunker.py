@@ -140,15 +140,8 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
                 company_id
             )
             vectors.append(vector_data)
-        del text
-        del clean_text
-        del chunks
-        del reader
-        del writer 
-        del single_page_pdf
+            del vector_data
         del image
-        del gray
-        del binary
 
         return vectors
 
@@ -192,7 +185,6 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
                 all_vectors.extend(result)
 
         print("Image to Text success")
-        del reader
         return all_vectors, total_pages
     except Exception as e:
         print("Error Getting Vector. Deleting Files from supabase", e)
