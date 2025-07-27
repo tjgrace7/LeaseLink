@@ -66,8 +66,9 @@ Here is the lease text:
 - rent_increase
 - maintenance_terms
 - taxes
-- insurance
-- CAMS
+- insurance (Property Insurance)
+- general_liability (General Liability Insurance required for tenant in property)
+- CAMS (Cam charge Plus Taxes and Interest per square foot)
 - square_footage
 - state_of_registration
 - mailing_address
@@ -106,19 +107,18 @@ Here is the lease text:
 - premises_description (Gives a more general and knowledgeable description of the rentable area)
 - parking_allocation (How much parking the tenant gets.)
 - storage_additional_space (If any storage is allotted or additional space is allotted to the tenant)
-- tenant_maintenance_responsibilities (Tenant's maintenance responsibilities.)
-- landlord_maintenance_responsibilities (Landlord's Maintenance Responsibilities)
+- tenant_maintenance_responsibilities (What is the Lessee's/Tenant responsibility to maintain and repair the unit)
+- landlord_maintenance_responsibilities (What is the Landlord's/Property Managers responsibility to maintain and repair the building/unit)
 - hvac_responsibilities (The HVAC responsibilities in detail)
 - utility_responsibilities (Utility Responsibility in detail)
 - default_and_remedies (The actions and ability to take actions of either part in the event of default by the other.)
-- assignment_and_subletting (What is permissible by the tenant if they desire to assign the lease or sublet the space.)
+- assignment_and_subletting (Is subletting allowed in the space? If so, under what terms and conditions?)
 - insurance_requirements (Insurance requirements for the renters of the space. (General or more probably liability))
 - indemnity_clauses (The landlords protection from being held legally liable for anything. (Tenant can't sue landlord))
-- compliance_with_laws (Tenants responsibility to be compliant with laws, federal and state.)
 - force_majeure (excuses one or both parties from performing their obligations when extraordinary events occur that are outside their control.)
 - estoppel_certificate_required (The requirement that tenants answer certain questions in certain occasions. Normally when selling  or refinancing.)
 - signage_rights (What signage rights the tenant has)
-- permitted_use (What the tenant is allowed to use the space for.)
+- permitted_use (What type of business is permitted to use the unit?)
 - exclusive_use_clause (Gives the tenant permission to be the sole operator allowed to do something.)
 - guarantor_information (the details about any person or entity that guarantees the tenant’s obligations under the lease.)
 - tenant_improvement_allowance (The amount the Landlord gives to the tenant to improve the property for the tenants use.)

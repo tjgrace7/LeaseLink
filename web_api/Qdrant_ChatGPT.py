@@ -122,6 +122,7 @@ Return a **single, semantically precise** version of the user's question that wi
         for data in oldData if data.get("message")
         ])
     try:
+
         systemprompt = f"""You are a helpful assistant answering questions about lease documents.
 
 {context}
