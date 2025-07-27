@@ -124,7 +124,7 @@ Here is the lease text:
 - tenant_improvement_allowance (The amount the Landlord gives to the tenant to improve the property for the tenants use.)
 - holdover_terms (Terms that apply when the tenant overstays their lease without a renewal.)
 - landlord_work (Work that is the responsibility of the landlord, normally before the tenant moves in.)
-- Tenant_work (The work or improvements that the tenant is held responsible for upon receiving access to the space)
+- Tenant_work (The work or improvements that the tenant is held responsible if applicable)
 - security_deposit_term (The terms that define security deposit rules.)
 - ROFR_ROFO_clauses (Right of First Refusal clauses or Right of First Offer clauses)
 - security_access_rights (The rights of security and the limits to the landlords access.)
