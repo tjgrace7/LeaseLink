@@ -59,8 +59,8 @@ Here is the lease text:
 - "other"
 
 **Task 2:** Extract the following fields if available:
-- effective_date
-- execution_date
+- effective_date (yyyy/mm/dd force into format)
+- execution_date (yyyy/mm/dd force into format)
 - term
 - current_rent
 - rent_increase
@@ -73,12 +73,12 @@ Here is the lease text:
 - state_of_registration
 - mailing_address
 - details
-- lease_execution_date (the Day the lease was signed)
-- lease_commencement_date (The Day the Lease takes effect)
+- lease_execution_date (the Day the lease was signe, yyyy/mm/dd force into format)
+- lease_commencement_date (The Day the Lease takes effect, yyyy/mm/dd force into format)
 - Property_Address (match case)
 - suite_identifier (The number or letter of the suite without the address)
 - lease_type (NNN, Gross, Percentage)
-- lease_expiration_date (Day that the lease ends before any options to renew.)
+- lease_expiration_date (Day that the lease ends before any options to renew. yyyy/mm/dd force into format)
 - lease_term (Length of lease in years/ months)
 - base_rent_monthly (Amount of rent for the building before expenses)
 - rent_escalation (The rent increase within the current term of the lease)
@@ -92,11 +92,11 @@ Here is the lease text:
 - insurance_costs (A summary of insurance expectations for both the tenant and the Landlord.)
 - tenant_reimbursements (A summary of the system in which the landlord is able to bill the tenant for expenses they initially paid for or the rights in which the tenants have to recoup the money in which they overpaid for building expenses.)
 - rent_abatement_end (the date where the tenants rent abatement runs out.)
-- rent_commencement_date (Date that rent starts)
+- rent_commencement_date (Date that rent starts, yyyy/mm/dd force into format)
 - renewal_notice_deadline (The amount of time before the lease expires that the tenant has to let the landlord know they are interested in renewing)
-- CAM_start_date (The date in which the tenant is responsible for paying estimated CAM amounts)
+- CAM_start_date (The date in which the tenant is responsible for paying estimated CAM amounts, yyyy/mm/dd force into format)
 - option_exercise_deadlines (The time in which the tenant must have accepted the option to renew)
-- delivery_possession_date (The day the tenants may access the space)
+- delivery_possession_date (The day the tenants may access the space, yyyy/mm/dd)
 - renewal_options (The amount of options the tenant has and the terms that change upon the commencement of these options.)
 - termination_rights (Any terms that allow either party to terminate the lease early.)
 - expansion_contraction_rights (The provisions that allow the tenant to grow into more space or shrink out of other space.)
