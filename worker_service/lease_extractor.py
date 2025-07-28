@@ -75,7 +75,7 @@ Here is the lease text:
 - details
 - lease_execution_date (the Day the lease was signe, yyyy/mm/dd force into format)
 - lease_commencement_date (The Day the Lease takes effect, yyyy/mm/dd force into format)
-- Property_Address (match case)
+- Property_Address (match case. The address of the property )
 - suite_identifier (The number or letter of the suite without the address)
 - lease_type (NNN, Gross, Percentage)
 - lease_expiration_date (Day that the lease ends before any options to renew. yyyy/mm/dd force into format)

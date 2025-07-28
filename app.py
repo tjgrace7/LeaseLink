@@ -222,6 +222,7 @@ async def process_file(request: Request, authorization: Optional[str] = Header(d
     print(f"[{job_id}] Creating thread")
     try:
         job_queue.put_nowait((job_id, lease_request))
+        supabase_client.table('tenant').update({'Available': False}).eq('tenant_id', lease_request.get('tenant_id'))
     except Exception as e:
         print(f"[{job_id}] Failed to queue job: {e}")
         job_status[job_id] = {"status": "error", "error": str(e), "result": None}

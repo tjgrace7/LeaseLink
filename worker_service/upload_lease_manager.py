@@ -47,7 +47,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         Supabase_api.supabase_post_request(supabase_client, [lease_data], "lease_documents")
         job_status['status'] = 'done'
         supabase_client.table('Upload_Job_Status').update({'job_info': job_status}).eq('job_id', job_id)
-
+        supabase_client.table('tenant').update({'Available': True}).eq('tenant_id', tenantid)
         
         print("Success")
 
