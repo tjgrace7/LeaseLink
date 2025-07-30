@@ -89,7 +89,6 @@ def chunk(text):
 
 def process_page(pdf, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, qdrant_client, job_id, bucket, file_path, job_status, dry_run=False):
     try:
-        batch_size = 10
         memory_max = 1000
         # Extract only this page from the PDF
         reader = PdfReader(BytesIO(pdf))
@@ -146,19 +145,19 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
                 company_id
             )
             vectors.append(vector_data)
+            del vector_data
             print(len(vectors))
             #Uploades Vectors into qdrant once 10 or more are active
-            if len(vectors) >= batch_size:
-                print("Uploading to Qdrant")
-                qdrant_client.upsert(collection_name="Test-Leases", points=vectors)
-                vectors.clear()
-                gc.collect()
-            del vector_data
+
         image.close()
         del image#, gray, binary
         gc.collect()
-
-        return vectors
+        if vectors:
+            print("Uploading to Qdrant")
+            qdrant_client.upsert(collection_name="Test-Leases", points=vectors)
+            vectors.clear()
+            gc.collect()
+            
 
     except Exception as e:
         print(f"Error processing page {page_number + 1}: {e}")
