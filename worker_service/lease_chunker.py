@@ -127,6 +127,7 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
         vectors = []
         for chunk_index, chunk_text in enumerate(chunks):
             if not isinstance(chunk_text, str) or not chunk_text.strip():
+                print(f"Skipping empty chunk at page {page_number + 1}, chunk {chunk_index}")
                 continue
             if dry_run:
                 print(f"[Dry Run] Page {page_number+1} - Chunk {chunk_index}: {chunk_text[:80]}...\n")
