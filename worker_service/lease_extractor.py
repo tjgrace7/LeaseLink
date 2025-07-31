@@ -5,20 +5,26 @@ import tiktoken
 
 from memory_profiler import profile
 
+def trim_chunks(chunks, max_tokens=6500):
+    selected = []
+    total_tokens = 0
+    for chunk in chunks:
+        tokens = len(chunk.split())  # rough estimate
+        if total_tokens + tokens > max_tokens:
+            break
+        selected.append(chunk)
+        total_tokens += tokens
+    return selected
+
 def get_relevant_chunks_from_lease(collection_Name, q_client, chatGPT, session_id,  top_k=30) -> dict:
     try:
         #ChatGPT analysis lease to determine lease type, effective, and execution dates prompt below
         query = """Classify this lease and extract key details like: 
-- term
-- current_rent
 - rent_increase
-- maintenance_terms
-- taxes
 - insurance (Property Insurance)
 - square_footage
 - state_of_registration
 - mailing_address
-- details
 - lease_execution_date (the Day the lease was signe, yyyy/mm/dd force into format)
 - lease_commencement_date (The Day the Lease takes effect, yyyy/mm/dd force into format)
 - Property_Address (match case. The address of the property )
@@ -105,7 +111,11 @@ def get_relevant_chunks_from_lease(collection_Name, q_client, chatGPT, session_i
                 raise ValueError(f"No Chunks found for session_id: {session_id}")
         except Exception as e:
             print("Error Getting Response from Qdrant")
-        context = "\n\n".join([r.payload.get("text", "") for r in results])
+        
+        top_chunks = [point.payload['text'] for point in results]
+
+        context = trim_chunks(top_chunks)
+
         prompt = f"""
 Here is the lease text:
 {context}
