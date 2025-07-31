@@ -64,43 +64,28 @@ def is_gibberish(line):
         return True
     return False
 
+def is_table_of_contents_page(lines):
+    toc_like_lines = 0
+    for line in lines:
+        line = line.strip()
+        # TOC lines usually have dot leaders and end in a number
+        if re.search(r'\.{4,}.*\d{1,3}$', line) or re.match(r'^ARTICLE\s+\d+\s*-?.*\.+\s*\d+$', line, re.IGNORECASE):
+            toc_like_lines += 1
 
-def remove_table_of_contents(text: str, max_lines_to_check: int = 100):
-    lines = text.splitlines()
-    cleaned_lines = []
+    return toc_like_lines / max(len(lines), 1) > 0.6  # If >60% of lines match
 
-    toc_patterns = [
-        re.compile(r'^ARTICLE\s+\d+\s*-?.*\.+\s*\d+$', re.IGNORECASE),
-        re.compile(r'^Section\s+\d+(\.\d+)?\s+.+\.+\s*\d+$', re.IGNORECASE),
-        re.compile(r'^[A-Z\s]{5,}\.+\s*\d+$'),  # Uppercase headings with dot leaders
-        re.compile(r'^.{10,80}\.{5,}.*\d$'),    # Long lines with many dots ending in a number
-        re.compile(r'^\s*[A-Z][^a-z]+\.{5,}\d{1,3}$'),  # ALLCAPS .... 23
-    ]
 
-    for i, line in enumerate(lines):
-        stripped = line.strip()
 
-        # Only scan the top N lines to avoid killing real content later in the doc
-        if i < max_lines_to_check:
-            if any(p.match(stripped) for p in toc_patterns):
-                continue
-            if stripped.count('.') > len(stripped) * 0.5 and re.search(r'\d{1,3}$', stripped):
-                continue
-
-        cleaned_lines.append(line)
-
-    return '\n'.join(cleaned_lines)
-
-#Takes the tesseract generated text and cleans it
 def clean_ocr_text(text):
-    # Apply corrections first
     corrected_text = apply_corrections(text)
+    lines = corrected_text.split('\n')
 
-    # Remove table of contents lines
-    text_without_toc = remove_table_of_contents(corrected_text)
+    # Detect and skip TOC-heavy pages
+    if is_table_of_contents_page(lines):
+        print("Table of Contents page detected — skipping")
+        return ""
 
-    # Split into lines and clean gibberish
-    lines = text_without_toc.split('\n')
+    # Remove individual lines of gibberish
     cleaned_lines = []
     for line in lines:
         if not is_gibberish(line):
