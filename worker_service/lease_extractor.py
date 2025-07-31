@@ -8,7 +8,77 @@ from memory_profiler import profile
 def get_relevant_chunks_from_lease(collection_Name, q_client, chatGPT, session_id, top_k=30) -> dict:
     try:
         #ChatGPT analysis lease to determine lease type, effective, and execution dates prompt below
-        query = "Classify this lease and extract key details like term, rent, maintenance, taxes, rent increases, maintenance terms, insurance, CAMS, square-footage, state-of-registration, mailing address, effective date, and execution date"
+        query = """Classify this lease and extract key details like: 
+- effective_date (yyyy/mm/dd force into format)
+- execution_date (yyyy/mm/dd force into format)
+- term
+- current_rent
+- rent_increase
+- maintenance_terms
+- taxes
+- insurance (Property Insurance)
+- general_liability (General Liability Insurance required for tenant in property)
+- CAMS (Cam charge Plus Taxes and Interest per square foot)
+- square_footage
+- state_of_registration
+- mailing_address
+- details
+- lease_execution_date (the Day the lease was signe, yyyy/mm/dd force into format)
+- lease_commencement_date (The Day the Lease takes effect, yyyy/mm/dd force into format)
+- Property_Address (match case. The address of the property )
+- suite_identifier (The number or letter of the suite without the address)
+- lease_type (NNN, Gross, Percentage)
+- lease_expiration_date (Day that the lease ends before any options to renew. yyyy/mm/dd force into format)
+- lease_term (Length of lease in years/ months)
+- base_rent_monthly (Amount of rent for the building before expenses)
+- rent_escalation (The rent increase within the current term of the lease)
+- security_deposit_amount (The amount the rent has to put as a "down payment" to hold there space. Is paid back at the end of the lease if the property is left in good condition.)
+- base_rent_psf (The Per Square Foot Base Rent (Annual Rent / SF))
+- base_rent_annually (Base rent amount paid across 12 months)
+- operating_expenses_CAM_psf (CAM expenses per square foot)
+- operating_expenses_CAM_monthly (Monthly estimated amount that tenants are pay in all expenses they are responsible for via the lease)
+- CAM_Summary (A summary of the Common Area Maintenance and who is responsible for expenses.)
+- property_taxes (A summary of who has responsibility to pay the property taxes for the building.)
+- insurance_costs (A summary of insurance expectations for both the tenant and the Landlord.)
+- tenant_reimbursements (A summary of the system in which the landlord is able to bill the tenant for expenses they initially paid for or the rights in which the tenants have to recoup the money in which they overpaid for building expenses.)
+- rent_abatement_end (the date where the tenants rent abatement runs out.)
+- rent_commencement_date (Date that rent starts, yyyy/mm/dd force into format)
+- renewal_notice_deadline (The amount of time before the lease expires that the tenant has to let the landlord know they are interested in renewing)
+- CAM_start_date (The date in which the tenant is responsible for paying estimated CAM amounts, yyyy/mm/dd force into format)
+- option_exercise_deadlines (The time in which the tenant must have accepted the option to renew)
+- delivery_possession_date (The day the tenants may access the space, yyyy/mm/dd)
+- renewal_options (The amount of options the tenant has and the terms that change upon the commencement of these options.)
+- termination_rights (Any terms that allow either party to terminate the lease early.)
+- expansion_contraction_rights (The provisions that allow the tenant to grow into more space or shrink out of other space.)
+- co_tenancy_clauses (Obligations that must be met by the landlord in accordance to other tenants and if not met the consequences.)
+- purchase_option (Options the tenant has to purchase the building in within the terms of the lease.)
+- rentable_square_footage (Useable SF + share of common areas (hallways, restrooms, etc.))
+- usable_square_footage (The amount of square footage the tenant occupies)
+- premises_description (Gives a more general and knowledgeable description of the rentable area)
+- parking_allocation (How much parking the tenant gets.)
+- storage_additional_space (If any storage is allotted or additional space is allotted to the tenant)
+- tenant_maintenance_responsibilities (What is the Lessee's/Tenant responsibility to maintain and repair the unit)
+- landlord_maintenance_responsibilities (What is the Landlord's/Property Managers responsibility to maintain and repair the building/unit)
+- hvac_responsibilities (The HVAC responsibilities in detail)
+- utility_responsibilities (Utility Responsibility in detail)
+- default_and_remedies (The actions and ability to take actions of either part in the event of default by the other.)
+- assignment_and_subletting (Is subletting allowed in the space? If so, under what terms and conditions?)
+- insurance_requirements (Insurance requirements for the renters of the space. (General or more probably liability))
+- indemnity_clauses (The landlords protection from being held legally liable for anything. (Tenant can't sue landlord))
+- force_majeure (excuses one or both parties from performing their obligations when extraordinary events occur that are outside their control.)
+- estoppel_certificate_required (The requirement that tenants answer certain questions in certain occasions. Normally when selling  or refinancing.)
+- signage_rights (What signage rights the tenant has)
+- permitted_use (What type of business is permitted to use the unit?)
+- exclusive_use_clause (Gives the tenant permission to be the sole operator allowed to do something.)
+- guarantor_information (the details about any person or entity that guarantees the tenant’s obligations under the lease.)
+- tenant_improvement_allowance (The amount the Landlord gives to the tenant to improve the property for the tenants use.)
+- holdover_terms (Terms that apply when the tenant overstays their lease without a renewal.)
+- landlord_work (Work that is the responsibility of the landlord, normally before the tenant moves in.)
+- Tenant_work (The work or improvements that the tenant is held responsible if applicable)
+- security_deposit_term (The terms that define security deposit rules.)
+- ROFR_ROFO_clauses (Right of First Refusal clauses or Right of First Offer clauses)
+- security_access_rights (The rights of security and the limits to the landlords access.)
+- exclusivity_rights (Blocks the landlord from allowing any competing business.)""" 
         print("Get_relevant_chunk_from_lease_inner_function")
         query_vector = ''
         try:
@@ -151,7 +221,7 @@ DO NOT CHANGE THE TITLE OF ANY FIELDS
             temperature = 0.1
         )
         try:
-            print(chat_response.message)
+            print(chat_response)
             json_start=chat_response.choices[0].message.content.find("{")
             token_usage = chat_response.usage
             prompt_tokens = token_usage.prompt_tokens
