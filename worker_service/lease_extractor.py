@@ -5,7 +5,7 @@ import tiktoken
 
 from memory_profiler import profile
 
-def trim_chunks(chunks, max_tokens=6500):
+def trim_chunks(chunks, max_tokens=3000):
     selected = []
     total_tokens = 0
     for chunk in chunks:
@@ -14,6 +14,7 @@ def trim_chunks(chunks, max_tokens=6500):
             break
         selected.append(chunk)
         total_tokens += tokens
+    print(total_tokens)
     return selected
 
 def get_relevant_chunks_from_lease(collection_Name, q_client, chatGPT, session_id,  top_k=30) -> dict:
