@@ -141,7 +141,7 @@ If the json key description closely matches with a lease item, but not quite use
 DO NOT CHANGE THE TITLE OF ANY FIELDS
 
 """
-        print("prompt")
+        print(prompt)
         chat_response = chatGPT.chat.completions.create(
             model="gpt-4",
             messages=[
@@ -151,6 +151,7 @@ DO NOT CHANGE THE TITLE OF ANY FIELDS
             temperature = 0.1
         )
         try:
+            print(chat_response.message)
             json_start=chat_response.choices[0].message.content.find("{")
             token_usage = chat_response.usage
             prompt_tokens = token_usage.prompt_tokens
