@@ -64,21 +64,50 @@ def is_gibberish(line):
         return True
     return False
 
+
+def remove_table_of_contents(text: str, max_lines_to_check: int = 100):
+    lines = text.splitlines()
+    cleaned_lines = []
+
+    toc_patterns = [
+        re.compile(r'^ARTICLE\s+\d+\s*-?.*\.+\s*\d+$', re.IGNORECASE),
+        re.compile(r'^Section\s+\d+(\.\d+)?\s+.+\.+\s*\d+$', re.IGNORECASE),
+        re.compile(r'^[A-Z\s]{5,}\.+\s*\d+$'),  # Uppercase headings with dot leaders
+        re.compile(r'^.{10,80}\.{5,}.*\d$'),    # Long lines with many dots ending in a number
+        re.compile(r'^\s*[A-Z][^a-z]+\.{5,}\d{1,3}$'),  # ALLCAPS .... 23
+    ]
+
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+
+        # Only scan the top N lines to avoid killing real content later in the doc
+        if i < max_lines_to_check:
+            if any(p.match(stripped) for p in toc_patterns):
+                continue
+            if stripped.count('.') > len(stripped) * 0.5 and re.search(r'\d{1,3}$', stripped):
+                continue
+
+        cleaned_lines.append(line)
+
+    return '\n'.join(cleaned_lines)
+
 #Takes the tesseract generated text and cleans it
 def clean_ocr_text(text):
-    #Applies corrections from above function
-    cleaned_text = apply_corrections(text)
-    #Splits text based on new lines
-    lines = cleaned_text.split('\n')
+    # Apply corrections first
+    corrected_text = apply_corrections(text)
+
+    # Remove table of contents lines
+    text_without_toc = remove_table_of_contents(corrected_text)
+
+    # Split into lines and clean gibberish
+    lines = text_without_toc.split('\n')
     cleaned_lines = []
-    #Checks each line to see if it is gibberish and makes no sense (From Tesseract conversion)
     for line in lines:
         if not is_gibberish(line):
             cleaned_lines.append(line)
-    #Joins Lines together
-    del cleaned_text
-    del lines
+
     return '\n'.join(cleaned_lines)
+
 
 def chunk(text):
     #Splits each text paragraph into a chunk if it has two \n new line texts
@@ -113,10 +142,10 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
         mem_mb = psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2
         print('Memory (MB):', mem_mb)
 
-        if mem_mb > 350:
+        if mem_mb > 450:
             print("High Memory detected. Slowing Down")
             time.sleep(2)
-        if mem_mb > 450:
+        if mem_mb > 600:
             print("High Memory Detected > 450mb. Slowing Down Further")
             time.sleep(5)
             

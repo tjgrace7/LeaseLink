@@ -5,20 +5,16 @@ import tiktoken
 
 from memory_profiler import profile
 
-def get_relevant_chunks_from_lease(collection_Name, q_client, chatGPT, session_id, top_k=30) -> dict:
+def get_relevant_chunks_from_lease(collection_Name, q_client, chatGPT, session_id,  top_k=30) -> dict:
     try:
         #ChatGPT analysis lease to determine lease type, effective, and execution dates prompt below
         query = """Classify this lease and extract key details like: 
-- effective_date (yyyy/mm/dd force into format)
-- execution_date (yyyy/mm/dd force into format)
 - term
 - current_rent
 - rent_increase
 - maintenance_terms
 - taxes
 - insurance (Property Insurance)
-- general_liability (General Liability Insurance required for tenant in property)
-- CAMS (Cam charge Plus Taxes and Interest per square foot)
 - square_footage
 - state_of_registration
 - mailing_address

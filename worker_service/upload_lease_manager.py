@@ -53,6 +53,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
 
     except Exception as e:
         print(f"GPT extraction or supabase insert failed: {e}")
+        job_status['status'] = "Error"
         Clear_Uploads(job_id, bucket_name, get_pdf, job_status)
     finally:
         del supabase_client
