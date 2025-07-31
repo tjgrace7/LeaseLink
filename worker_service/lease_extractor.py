@@ -5,7 +5,7 @@ import tiktoken
 
 from memory_profiler import profile
 
-def trim_chunks(chunks, max_tokens=3000):
+def trim_chunks(chunks, max_tokens=5000):
     selected = []
     total_tokens = 0
     for chunk in chunks:
