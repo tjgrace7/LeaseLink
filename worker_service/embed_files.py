@@ -4,7 +4,7 @@ from qdrant_client.models import PointStruct
 from memory_profiler import profile
 
 #Takes Chunked Text and embeds files with openai embedding
-def EmbedFiles(client, chunk, tenantid, propertymanagerid, propertyid,unitid, upload_session_id, pagenumber, sourcedocname, chunkindex, company_id):
+def EmbedFiles(client, chunk, tenantid, propertymanagerid, propertyid,unitid, upload_session_id, pagenumber, sourcedocname, chunkindex, company_id, chunk_class):
     #If creating a tenant, sets tenant id null
     if tenantid is None:
         tenantid= ""
@@ -35,7 +35,8 @@ def EmbedFiles(client, chunk, tenantid, propertymanagerid, propertyid,unitid, up
             "session_id" : upload_session_id,
             "source_id" : f"{upload_session_id}_{tenantid}_{sourcedocname}_{pagenumber}_{chunkindex}",
             "managementcompany_id" : company_id,
-            "highlight_id" : str(uuid4())
+            "highlight_id" : str(uuid4()),
+            'embedding_class': chunk_class
         })
    
     

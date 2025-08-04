@@ -64,34 +64,25 @@ def is_gibberish(line):
         return True
     return False
 
-def is_table_of_contents_page(lines):
-    toc_like_lines = 0
-    for line in lines:
-        line = line.strip()
-        # TOC lines usually have dot leaders and end in a number
-        if re.search(r'\.{4,}.*\d{1,3}$', line) or re.match(r'^ARTICLE\s+\d+\s*-?.*\.+\s*\d+$', line, re.IGNORECASE):
-            toc_like_lines += 1
+EMBEDDING_CLASSES = {
+    'rent': ['rent', 'base rent', 'security deposit', 'rent commencement'],
+    'CAM': ['common area maintenance', 'CAM', 'CAM costs', 'CAM Summary', 'CAM per Square Foot', 'CAM per SF'],
+    'insurance': ['insurance', 'liability insurance', 'insurance requirements', ],
+    'taxes': ['taxes', 'property taxes', 'rental taxes'],
+    'termination': ['termination', 'termination rights', ],
+    'address': ['property address', 'suite', 'address', 'street name', 'street address'],
+    'dates': ['lease execution date', 'lease commencement date', 'lease start date', 'lease signing date', 'lease expiration', 'lease end', 'rent abatement end', 'abatement runs out', 'date', ],
+    'term': ['default', 'renewal', 'lease type', 'lease term', 'term', 'length', 'months', 'holdover', 'holdover terms', 'renewal options']
+    }
 
-    return toc_like_lines / max(len(lines), 1) > 0.6  # If >60% of lines match
+def classify_chunk(text):
+    text_lower = text.lower()
+    for label, keywords in EMBEDDING_CLASSES.items():
+        if any(k in text_lower for k in keywords):
+            return label
+    return 'general'
 
 
-
-def clean_ocr_text(text):
-    corrected_text = apply_corrections(text)
-    lines = corrected_text.split('\n')
-
-    # Detect and skip TOC-heavy pages
-    if is_table_of_contents_page(lines):
-        print("Table of Contents page detected — skipping")
-        return ""
-
-    # Remove individual lines of gibberish
-    cleaned_lines = []
-    for line in lines:
-        if not is_gibberish(line):
-            cleaned_lines.append(line)
-
-    return '\n'.join(cleaned_lines)
 
 
 def chunk(text):
@@ -120,8 +111,8 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
 
         # OCR
         text = image_to_string(image)
-        clean_text = clean_ocr_text(text)
-        chunks = chunk(clean_text)
+        chunks = chunk(text)
+
 
         print(f"Processed page {page_number + 1}")
         mem_mb = psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2
@@ -145,6 +136,7 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
             if dry_run:
                 print(f"[Dry Run] Page {page_number+1} - Chunk {chunk_index}: {chunk_text[:80]}...\n")
                 continue
+            chunk_class = classify_chunk(chunk_text)
             vector_data = embed_files.EmbedFiles(
                 client,
                 chunk_text,
@@ -156,7 +148,8 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
                 page_number + 1,  # Display page as 1-based
                 source_doc_name,
                 chunk_index,
-                company_id
+                company_id,
+                chunk_class
             )
             vectors.append(vector_data)
             del vector_data
