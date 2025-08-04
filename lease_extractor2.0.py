@@ -7,7 +7,7 @@ from openai import OpenAI
 
 from memory_profiler import profile
 
-session = "035536e7-f0ef-4e44-9b61-225fbc226fad"
+session = "bac5ad08-5300-4605-aa86-957b8da41096"
 qdrant =  QdrantClient(
     url = "https://3ecddab7-3429-41fc-9acd-7f555d763f3e.us-west-2-0.aws.cloud.qdrant.io:6333",
     api_key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJhY2Nlc3MiOiJtIn0.iFAxDJ2i34RExukQycaIB_ytJySH7JC4aZ21hOxf8Rc"
@@ -41,13 +41,18 @@ def costCalculator(token_usage, search_query):
         return total_cost
 
 
-def lease_extractor(query, chatGPT, q_client, collection_Name, session_id, top_k=30):
+def lease_extractor(query, chatGPT, q_client, collection_Name, session_id, mainFilter, sideFilter1, sideFilter2, top_k=30):
     try:
         prompt_embed = chatGPT.embeddings.create(
             input=query,
             model='text-embedding-3-large'
         )
-
+        filter = Filter(
+            must = [
+                FieldCondition(key='session_id', match=MatchValue(value=session_id)),
+                FieldCondition(key='embedding_class', match=MatchValue(value=mainFilter))
+            ]
+        )
         query_vector = prompt_embed.data[0].embedding
         results = q_client.search(
             collection_name = collection_Name,
@@ -112,7 +117,7 @@ def get_relevant_chunks_from_lease(collection_Name, q_client, chatGPT, session_i
     -property_taxes (A summary of who has responsibility to pay the property taxes for the building.) 
     -insurance_costs (A summary of insurance expectations for both the tenant and the Landlord.) 
     """
-    costs, costs_cost = lease_extractor(query2, chatGPT, q_client, collection_Name, session_id)
+    costs, costs_cost = lease_extractor(query2, chatGPT, q_client, collection_Name, session_id, 'rent', 'CAM', 'taxes')
     print(costs)
     print (costs_cost)
 

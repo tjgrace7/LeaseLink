@@ -84,10 +84,18 @@ def classify_chunk(text):
 
 
 
-
+section_regex = re.compile(r'^\d+(\.\d+)?\s+[A-Z \-]+:?')
 def chunk(text):
-    #Splits each text paragraph into a chunk if it has two \n new line texts
-    chunks = [p.strip() for p in text.split("\n\n")]
+    chunks = []
+    current = []
+    for line in text:
+        if section_regex.match(line.strip()) and current:
+            chunks.append("\n".join(current))
+            current = [line]
+        else:
+            current.append(line)
+    if current:
+        chunks.append("\n".join(current))
     return chunks
 
 # (Keep corrections, apply_corrections, is_gibberish, clean_ocr_text, and chunk as-is)
