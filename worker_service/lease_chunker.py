@@ -84,18 +84,27 @@ def classify_chunk(text):
 
 
 
-section_regex = re.compile(r'^\d+(\.\d+)?\s+[A-Z \-]+:?')
 def chunk(text):
+
+    section_regex = re.compile(r'^\d+(\.\d+)?\s+[A-Z \-]+:?')
+    
+    lines = text.splitlines()
     chunks = []
-    current = []
-    for line in text:
-        if section_regex.match(line.strip()) and current:
-            chunks.append("\n".join(current))
-            current = [line]
+    current_chunk = []
+
+    for line in lines:
+        if section_regex.match(line.strip()):
+            if current_chunk:
+                chunks.append("\n".join(current_chunk).strip())
+                current_chunk = [line]
+            else:
+                current_chunk.append(line)
         else:
-            current.append(line)
-    if current:
-        chunks.append("\n".join(current))
+            current_chunk.append(line)
+
+    if current_chunk:
+        chunks.append("\n".join(current_chunk).strip())
+
     return chunks
 
 # (Keep corrections, apply_corrections, is_gibberish, clean_ocr_text, and chunk as-is)
@@ -118,7 +127,7 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
         #binary = gray.point(lambda x: 0 if x < 180 else 255, '1')
 
         # OCR
-        text = image_to_string(image)
+        text = image_to_string(image, config='--psm 6')
         chunks = chunk(text)
 
 
@@ -160,7 +169,6 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
                 company_id,
                 chunk_class
             )
-            print(vector_data)
             vectors.append(vector_data)
             del vector_data
             print(len(vectors))
