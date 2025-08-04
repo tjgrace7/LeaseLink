@@ -137,6 +137,7 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
                 print(f"[Dry Run] Page {page_number+1} - Chunk {chunk_index}: {chunk_text[:80]}...\n")
                 continue
             chunk_class = classify_chunk(chunk_text)
+            print(chunk_class)
             vector_data = embed_files.EmbedFiles(
                 client,
                 chunk_text,
@@ -151,6 +152,7 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
                 company_id,
                 chunk_class
             )
+            print(vector_data)
             vectors.append(vector_data)
             del vector_data
             print(len(vectors))
