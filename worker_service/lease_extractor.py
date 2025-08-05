@@ -8,6 +8,7 @@ from memory_profiler import profile
 def trim_chunks(chunks, max_tokens=3000):
     selected = []
     total_tokens = 0
+    
     for chunk in chunks:
         tokens = len(chunk.split())  # rough estimate
         if total_tokens + tokens > max_tokens:

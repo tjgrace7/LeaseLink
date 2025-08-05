@@ -10,6 +10,7 @@ from PyPDF2 import PdfReader, PdfWriter
 import time
 from memory_profiler import profile
 from common.cleanup_utils import Clear_Uploads
+from datetime import datetime
 
 corrections = {
     "Shail":"Shall",
@@ -85,7 +86,7 @@ def chunk(text):
     lines = text.splitlines()
     chunks = []
     current_chunk = []
-
+    start_time = datetime.now()
     for line in lines:
         stripped = line.strip()
         if not stripped:
@@ -102,6 +103,9 @@ def chunk(text):
     if current_chunk:
         chunks.append("\n".join(current_chunk))
     del current_chunk, lines, text
+    end_time = datetime.now()
+    difference = end_time-start_time
+    print(f"Chunking time: {difference.total_seconds():.3f} seconds")
     return chunks
 
 # (Keep corrections, apply_corrections, is_gibberish, clean_ocr_text, and chunk as-is)
