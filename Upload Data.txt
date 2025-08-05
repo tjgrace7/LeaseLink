@@ -1,0 +1,80 @@
+{
+  "lease_execution_date": "2019/10/15",
+  "lease_commencement_date": "2019/10/15",
+  "lease_expiration_date": "2025/01/31",
+  "delivery_possession_date": "2019/10/15",
+  "CAM_start_date": "2020/01/18",
+  "rent_abatement_end": "2020/01/14",
+  "rent_commencement_date": "2020/01/15",
+  "base_rent_monthly": 1679.0,
+  "rent_escalation": [
+    {
+      "date": "2020/01/15",
+      "amount": 839.5
+    },
+    {
+      "date": "2020/02/01",
+      "amount": 1679.0
+    },
+    {
+      "date": "2021/02/01",
+      "amount": 1704.0
+    },
+    {
+      "date": "2022/02/01",
+      "amount": 1734.0
+    },
+    {
+      "date": "2023/02/01",
+      "amount": 1755.0
+    },
+    {
+      "date": "2024/02/01",
+      "amount": 1782.0
+    }
+  ],
+  "base_rent_psf": 15.5,
+  "base_rent_annually": 20148.0,
+  "operating_expenses_CAM_psf": 4.0,
+  "operating_expenses_CAM_monthly": 433.33,
+  "property_taxes": "Tenant agrees to pay all taxes and assessments levied and assessed for any year upon the Premises and the underlying realty.",
+  "insurance_costs": "Tenant agrees to pay the amount of the cost to Landlord of the insurance required to be maintained by Landlord on the Premises under section 12.2, as well as public liability insurance for the common areas.",
+  "CAM_Summary": "Tenant's CAMs are paid monthly with Minimum Rent and shall commence on January 18, 2020. Tenant's CAMs shall not exceed $5.00/SF/YR during any year of the initial term of this Lease.",
+  "tenant_reimbursements": "Tenant shall pay, in addition to the foregoing expenses, an allowance to Landlord for Landlord's supervision and administration of said common areas in an amount equal to ten percent (10%) of the total of the aforementioned expenses for each calendar year.",
+  "insurance_requirements": "Tenant agrees to pay the amount of the cost to Landlord of the insurance required to be maintained by Landlord on the Premises under section 12.2, as well as public liability insurance for the common areas.",
+  "Property_Address": "TRENT & ARGONNE PLAZA",
+  "lease_term": 63,
+  "renewal_notice_deadline": null,
+  "option_exercise_deadlines": null,
+  "renewal_options": null,
+  "termination_rights": "In the event the Term of this Lease has not commenced on a date twelve (12) months from the date hereof, then and in that event this Lease shall, at Landlord's option, be deemed null and void and shall have no further force and effect and each of the parties hereto shall be released from any further obligation hereunder and any Security Deposit made herewith shall be forfeited to Landlord.",
+  "expansion_contraction_rights": "Landlord additionally reserves the right to relocate the Premises to another space of comparable size within the Shopping Center, upon reasonable written notice to Tenant and provided that Landlord shall be responsible for the actual expenses of relocating Tenant's fixtures and equipment associated with such relocation.",
+  "co_tenancy_clauses": null,
+  "purchase_option": null,
+  "rentable_square_footage": null,
+  "usable_square_footage": null,
+  "premises_description": null,
+  "parking_allocation": null,
+  "storage_additional_space": null,
+  "tenant_maintenance_responsibilities": "Tenant agrees at all times, from and after delivery of possession of the Premises to Tenant, and at its own cost and expense, to maintain, repair and/or replace in good and tenable condition the Premises and every part thereof, excluding only the roof, roof membrane, structural parts of the Premises, floor and exterior walls.",
+  "landlord_maintenance_responsibilities": "Landlord may enter into service contracts to provide for regularly scheduled maintenance to the HVAC systems serving the Premises and/or the Shopping Center. The cost of such service contracts, as well as the cost of repairs and replacements of the HVAC system, including repairs or replacement required to comply with the Clean Air Act or other governmental regulations, may be included by Landlord in the expenses to be reimbursed to Landlord by Tenant.",
+  "hvac_responsibilities": "Landlord may enter into service contracts to provide for regularly scheduled maintenance to the HVAC systems serving the Premises and/or the Shopping Center. The cost of such service contracts, as well as the cost of repairs and replacements of the HVAC system, including repairs or replacement required to comply with the Clean Air Act or other governmental regulations, may be included by Landlord in the expenses to be reimbursed to Landlord by Tenant.",
+  "utility_responsibilities": null,
+  "default_and_remedies": "In the event of any such material default or breach by Tenant, as defined in Section 18.1 above, Landlord may at any time thereafter, without limiting Landlord in the exercise of any right of remedy at law or in equity which Landlord may have by reason of such default or breach.",
+  "assignment_and_subletting": null,
+  "indemnity_clauses": "Tenant and all those claiming through or under Tenant shall store their property in and shall occupy and use the Premises and the common areas solely at their own risk. Tenant and all those claiming through or under Tenant hereby release Landlord, and its respective affiliates, employees and agents, from all claims of every kind, including loss of life, personal or bodily injury, damage to merchandise, equipment, fixtures or other property, or damage to business (including business interruption) arising, directly or indirectly, out of or from or on account of such occupancy and use or resulting from any present or future conditions or state of repair thereof, except to the extent such claims are directly caused by the negligence of Landlord and are not covered by insurance required to be carried by Tenant hereunder.",
+  "force_majeure": null,
+  "estoppel_certificate_required": null,
+  "signage_rights": null,
+  "permitted_use": null,
+  "exclusive_use_clause": null,
+  "guarantor_information": null,
+  "tenant_improvement_allowance": null,
+  "holdover_terms": null,
+  "landlord_work": null,
+  "Tenant_work": null,
+  "security_deposit_term": null,
+  "ROFR_ROFO_clauses": null,
+  "security_access_rights": "Landlord and the authorized representatives of Landlord may enter the Premises at all reasonable times for the purposes of exhibiting the same to prospective purchasers and, during the final ninety (90) days of the term of this Lease, may exhibit the Premises for lease in and display thereon in such manner as not unreasonably to interfere with Tenant's business the usual \u201cFor Lease\u201d signs, and such signs shall remain unmolested upon the Premises.",
+  "exclusivity_rights": null
+}

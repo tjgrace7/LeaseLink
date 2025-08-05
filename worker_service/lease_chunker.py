@@ -65,14 +65,8 @@ def is_gibberish(line):
     return False
 
 EMBEDDING_CLASSES = {
-    'rent': ['rent', 'base rent', 'security deposit', 'rent commencement'],
-    'CAM': ['common area maintenance', 'CAM', 'CAM costs', 'CAM Summary', 'CAM per Square Foot', 'CAM per SF'],
-    'insurance': ['insurance', 'liability insurance', 'insurance requirements', ],
-    'taxes': ['taxes', 'property taxes', 'rental taxes'],
-    'termination': ['termination', 'termination rights', ],
-    'address': ['property address', 'suite', 'address', 'street name', 'street address'],
-    'dates': ['lease execution date', 'lease commencement date', 'lease start date', 'lease signing date', 'lease expiration', 'lease end', 'rent abatement end', 'abatement runs out', 'date', ],
-    'term': ['default', 'renewal', 'lease type', 'lease term', 'term', 'length', 'months', 'holdover', 'holdover terms', 'renewal options']
+    'financial': ['base rent monthly', 'rent escalation', 'security deposit', 'rent', 'operating expenses', 'CAM', 'tenant', 'insurance', 'start_date', 'common area maintenance', 'tenant_reimbursements', 'insurance', 'delivery possession date', 'rent abatement', 'rent commencement'],
+    'term': ['address', 'suite', 'term', 'length', 'month', 'renewal', 'renewal notice', 'termination_rights', 'expansion rights', 'shrinkage rights', 'contraction rights', 'co tenancy', 'purchase options', 'square footage', 'rentable square footage', 'premises', 'parking', 'storage', 'maintenance', 'hvac', 'utility', 'default', 'assignment', 'subletting', 'indemnity', 'force majeure', 'estoppel', 'signage', 'permitted use', 'exclusive_use', 'guarantor', 'tenant improvement', 'holdover terms', 'landlord work', 'tenant work', 'security deposit term', 'Right of First Refusal', 'ROFR', 'Right of First Offer', 'ROFO', 'security access', 'exclusivity']
     }
 
 def classify_chunk(text):
@@ -93,18 +87,21 @@ def chunk(text):
     current_chunk = []
 
     for line in lines:
-        if section_regex.match(line.strip()):
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if section_regex.match(stripped):
             if current_chunk:
-                chunks.append("\n".join(current_chunk).strip())
-                current_chunk = [line]
+                chunks.append("\n".join(current_chunk))
+                current_chunk = [stripped]
             else:
-                current_chunk.append(line)
+                current_chunk.append(stripped)
         else:
-            current_chunk.append(line)
-
+            current_chunk.append(stripped)
+        del stripped
     if current_chunk:
-        chunks.append("\n".join(current_chunk).strip())
-
+        chunks.append("\n".join(current_chunk))
+    del current_chunk, lines, text
     return chunks
 
 # (Keep corrections, apply_corrections, is_gibberish, clean_ocr_text, and chunk as-is)
@@ -135,11 +132,11 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
         mem_mb = psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2
         print('Memory (MB):', mem_mb)
 
-        if mem_mb > 450:
+        if mem_mb > 850:
             print("High Memory detected. Slowing Down")
             time.sleep(2)
-        if mem_mb > 600:
-            print("High Memory Detected > 450mb. Slowing Down Further")
+        if mem_mb > 1000:
+            print("High Memory Detected > 1000mb. Slowing Down Further")
             time.sleep(5)
             
         if mem_mb > memory_max:
