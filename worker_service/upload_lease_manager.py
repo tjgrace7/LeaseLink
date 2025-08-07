@@ -1,31 +1,55 @@
 from dotenv import load_dotenv  
-from . import lease_extractor
+from . import claude_extractor
+from io import BytesIO
+from PyPDF2 import PdfReader, PdfWriter
 import uuid
 import json
 from . import lease_chunker
 import common.Supabase_api as Supabase_api
 from common.cleanup_utils import Clear_Uploads
 
+def is_real_value(val):
+    return val and str(val).strip().lower() != 'n/a'
 
-
-def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_name, company_id, collectionName, OpenAIclient, qdrant_client, supabase_client, job_id, job_status):
+def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_name, company_id, collectionName, OpenAIclient, qdrant_client, supabase_client, job_id, job_status, claude_client):
     load_dotenv()
     upload_session_id = str(uuid.uuid4())
     print(f"Upload_Session_id: {upload_session_id}")
     extracted_lease_data = {}
 
     pdf_file = Supabase_api.download_file(supabase_client, bucket_name, get_pdf)
-    #Converts pdf to image, then to text, chunks text, embeds text, and converts to json payload for qdrant
-    print("Starting PDF text extraction + embedding")
-    total_pages = lease_chunker.extract_text_from_pdf(pdf_file, OpenAIclient, tenantid, auth_id, propertyid, unit_id,upload_session_id, get_pdf, company_id, job_id, bucket_name, get_pdf, qdrant_client, job_status)
-    print("Finished Embedding Total Page: ", total_pages)
-
-
+    reader = ''
     try:
+        reader = PdfReader(BytesIO(pdf_file))
+        total_pages = len(reader.pages)
         print("starting extraction")
-        #Sends message to ChatGPT to extract needed data from lease
-        extracted_lease_data, total_cost = lease_extractor.get_relevant_chunks_from_lease(collectionName, qdrant_client, OpenAIclient, upload_session_id)
 
+        chunk_size=100
+        combined_extracted_data = {}
+        total_cost = 0.0
+
+        for chunk_index, start in enumerate(range(0, total_pages, chunk_size)):
+            end = min(start + chunk_size, total_pages)
+
+            writer = PdfWriter()
+            for i in range(start, end):
+                writer.add_page(reader.pages[i])
+            buffer = BytesIO()
+            writer.write(buffer)
+            buffer.seek(0)
+
+            print(f"Extracting chunk {chunk_index + 1}: pages {start + 1} to {end}")
+
+            extracted_lease, cost = claude_extractor.claude_extraction(buffer.getvalue(), claude_client)
+            for key, value in extracted_lease.items():
+                existing = combined_extracted_data.get(key)
+
+                if key not in combined_extracted_data:
+                    combined_extracted_data[key] = value
+                elif not is_real_value(existing) and is_real_value(value):
+                    combined_extracted_data[key] = value
+            total_cost += cost
+        extracted_lease_data = combined_extracted_data
         if isinstance(extracted_lease_data, str):
             #if returned as string converts to json
             lease_data = json.loads(extracted_lease_data)
@@ -41,11 +65,10 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         #Adds auth_id into lease_data
         lease_data["created_by"] = auth_id
         lease_data["lease_id"] = lease_id
-        lease_data["cost_per_upload"] = total_cost
         lease_data['page_count'] = total_pages
         #upserts lease_data into lease_documents table in supabase
         Supabase_api.supabase_post_request(supabase_client, [lease_data], "lease_documents")
-        job_status['status'] = 'done'
+        job_status['status'] = 'extracted'
         supabase_client.table('Upload_Job_Status').update({'job_info': job_status}).eq('job_id', job_id)
         supabase_client.table('tenant').update({'Available': True}).eq('tenant_id', tenantid)
         
@@ -55,11 +78,19 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         print(f"GPT extraction or supabase insert failed: {e}")
         job_status['status'] = "error"
         Clear_Uploads(job_id, bucket_name, get_pdf, job_status)
-    finally:
-        del supabase_client
-        del extracted_lease_data
-        del qdrant_client
-        del upload_session_id
-        del pdf_file
-        del total_pages
+    #Converts pdf to image, then to text, chunks text, embeds text, and converts to json payload for qdrant
+    print("Starting PDF text extraction + embedding")
+    total_embedding_cost = lease_chunker.extract_text_from_pdf(pdf_file, OpenAIclient, tenantid, auth_id, propertyid, unit_id,upload_session_id, get_pdf, company_id, job_id, bucket_name, get_pdf, qdrant_client, job_status, collectionName, total_pages)
+    job_status['status'] = 'success'
+    supabase_client.table('Upload_Job_Status').update({'job_info': job_status}).eq('job_id', job_id)
+    
+    cost_upload = {}
+
+    cost_upload['cost_per_upload'] = total_embedding_cost + total_cost
+    cost_upload['lease_id'] = lease_id
+    cost_upload['upload_session_id'] = upload_session_id
+    Supabase_api.supabase_post_request(supabase_client, [cost_upload], 'lease_documents')
+
+
+
 

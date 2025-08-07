@@ -2,6 +2,7 @@ from datetime import datetime
 from uuid import uuid4
 from qdrant_client.models import PointStruct
 from memory_profiler import profile
+import tiktoken
 
 #Takes Chunked Text and embeds files with openai embedding
 def EmbedFiles(client, chunk, tenantid, propertymanagerid, propertyid,unitid, upload_session_id, pagenumber, sourcedocname, chunkindex, company_id, chunk_class):
@@ -15,6 +16,8 @@ def EmbedFiles(client, chunk, tenantid, propertymanagerid, propertyid,unitid, up
             input=chunk,
             model="text-embedding-3-large"
         )
+        encoding = tiktoken.encoding_for_model('text-embedding-3-large')
+        embedding_cost = len(encoding.encode(chunk)) * .00000013
         #Gets embedded vector from openai
         vector = response.data[0].embedding
         #prepares payload for vector db
@@ -37,6 +40,6 @@ def EmbedFiles(client, chunk, tenantid, propertymanagerid, propertyid,unitid, up
             "managementcompany_id" : company_id,
             "highlight_id" : str(uuid4()),
             'embedding_class': chunk_class
-        })
+        }), embedding_cost
    
     

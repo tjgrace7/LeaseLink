@@ -110,7 +110,7 @@ def chunk(text):
 
 # (Keep corrections, apply_corrections, is_gibberish, clean_ocr_text, and chunk as-is)
 
-def process_page(pdf, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, qdrant_client, job_id, bucket, file_path, job_status, dry_run=False):
+def process_page(pdf, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, qdrant_client, job_id, bucket, file_path, collectionName, dry_run=False):
     try:
         memory_max = 1000
         # Extract only this page from the PDF
@@ -147,6 +147,7 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
             Clear_Uploads(job_id, bucket, file_path)
 
         vectors = []
+        embedding_cost = 0
         for chunk_index, chunk_text in enumerate(chunks):
             if not isinstance(chunk_text, str) or not chunk_text.strip():
                 print(f"Skipping empty chunk at page {page_number + 1}, chunk {chunk_index}")
@@ -156,7 +157,7 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
                 continue
             chunk_class = classify_chunk(chunk_text)
             print(chunk_class)
-            vector_data = embed_files.EmbedFiles(
+            vector_data, embeddingcost = embed_files.EmbedFiles(
                 client,
                 chunk_text,
                 tenantid,
@@ -171,6 +172,7 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
                 chunk_class
             )
             vectors.append(vector_data)
+            embedding_cost += embeddingcost
             del vector_data
             print(len(vectors))
             #Uploades Vectors into qdrant once 10 or more are active
@@ -180,25 +182,20 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
         gc.collect()
         if vectors:
             print("Uploading to Qdrant")
-            qdrant_client.upsert(collection_name="Test-Leases", points=vectors)
+            qdrant_client.upsert(collection_name=collectionName, points=vectors)
             vectors.clear()
             gc.collect()
             
-
+        return embedding_cost
     except Exception as e:
         print(f"Error processing page {page_number + 1}: {e}")
         return []
 
-def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, job_id, bucket, file_path, qdrant_client, job_status):
-    reader = ''
-    try:
-        reader = PdfReader(BytesIO(pdf))
-        total_pages = len(reader.pages)
-    except Exception as e:
-        print("Could not read pages", e)
-    print("Processing each page with threading (one at a time in memory)")
+def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, job_id, bucket, file_path, qdrant_client, job_status, collectionName, total_pages):
+    total_embedding_cost = 0.0
 
-    all_vectors = []
+
+
     #Runs each images converted from bytes on seperate thread for efficiency and speed
     try:
         with ThreadPoolExecutor(max_workers=2) as executor:
@@ -219,17 +216,19 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
                     job_id,
                     bucket,
                     file_path, 
-                    job_status
+                    collectionName
                 )
                 for page_number in range(total_pages)
             ]
         for future in futures:
             result = future.result()
+
             if result:
-                all_vectors.extend(result)
+                if isinstance(result, (int, float)):
+                    total_embedding_cost += result
 
         print("Image to Text success")
-        return total_pages
+        return total_embedding_cost
     except Exception as e:
         print("Error Getting Vector. Deleting Files from supabase", e)
         Clear_Uploads(job_id, bucket, file_path, job_status)

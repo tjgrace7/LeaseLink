@@ -18,6 +18,7 @@ import traceback
 import signal
 from queue import Queue
 import threading
+from anthropic import Anthropic
 
 
 app = FastAPI()
@@ -36,6 +37,9 @@ collectionName = "Test-Leases"
 supabase_url = os.getenv("SUPABASE_URL")
 JWKS_URL = f"{supabase_url}/auth/v1/keys"
 SUPABASE_JWT = os.getenv("SUPABASE_JWT")
+Claude = os.getenv("Claude_API_KEY")
+
+
 
 
 job_queue = Queue()
@@ -82,6 +86,8 @@ signal.signal(signal.SIGTERM, signal_handler)
 
 #Connects OpenAI api key
 OpenAIclient = OpenAI(api_key=os.getenv("OPEN_AI_PROJECT_KEY"))
+
+claude_client = Anthropic(api_key="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")
 #Sets up qdrant_client for easy access
 qdrant_client = QdrantClient(
     url = os.getenv("QDRANT_URL"),
@@ -118,7 +124,8 @@ def export_lease(job_id, lease_request):
             qdrant_client,
             supabase_client,
             job_id,
-            job_status[job_id]
+            job_status[job_id],
+            claude_client
         )
 
     except Exception as e:
