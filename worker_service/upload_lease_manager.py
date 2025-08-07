@@ -7,6 +7,7 @@ import json
 from . import lease_chunker
 import common.Supabase_api as Supabase_api
 from common.cleanup_utils import Clear_Uploads
+import time
 
 def is_real_value(val):
     return val and str(val).strip().lower() != 'n/a'
@@ -24,7 +25,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         total_pages = len(reader.pages)
         print("starting extraction")
 
-        chunk_size=80
+        chunk_size=100
         combined_extracted_data = {}
         total_cost = 0.0
 
@@ -50,6 +51,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
                 elif not is_real_value(existing) and is_real_value(value):
                     combined_extracted_data[key] = value
             total_cost += cost
+            time.sleep(30)
         extracted_lease_data = combined_extracted_data
         if isinstance(extracted_lease_data, str):
             #if returned as string converts to json
