@@ -24,7 +24,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         total_pages = len(reader.pages)
         print("starting extraction")
 
-        chunk_size=100
+        chunk_size=80
         combined_extracted_data = {}
         total_cost = 0.0
 
