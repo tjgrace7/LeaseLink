@@ -5,7 +5,7 @@ import base64
 
 # Method 1: Upload file and reference by base64
 def encode_pdf_to_base64(pdf_bytes):
-    return base64.b64encode(pdf_bytes.read()).decode('utf-8')
+    return base64.b64encode(pdf_bytes).decode('utf-8')
 
 def claude_extraction(pdf, claude_client):
     # Encode your PDF
