@@ -8,6 +8,8 @@ from . import lease_chunker
 import common.Supabase_api as Supabase_api
 from common.cleanup_utils import Clear_Uploads
 import time
+import tempfile
+import os
 
 def is_real_value(val):
     return val and str(val).strip().lower() != 'n/a'
@@ -20,28 +22,26 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
 
     pdf_file = Supabase_api.download_file(supabase_client, bucket_name, get_pdf)
     reader = ''
+    total_cost = 0.0
     try:
         reader = PdfReader(BytesIO(pdf_file))
         total_pages = len(reader.pages)
         print("starting extraction")
 
-        chunk_size=50
+        chunk_size=100
         combined_extracted_data = {}
-        total_cost = 0.0
-
-        for chunk_index, start in enumerate(range(0, total_pages, chunk_size)):
-            end = min(start + chunk_size, total_pages)
-
+        for start in range(0, total_pages, chunk_size):
             writer = PdfWriter()
+            end = min(start+chunk_size, total_pages)
             for i in range(start, end):
                 writer.add_page(reader.pages[i])
-            buffer = BytesIO()
-            writer.write(buffer)
-            buffer.seek(0)
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
 
-            print(f"Extracting chunk {chunk_index + 1}: pages {start + 1} to {end}")
+            writer.write(temp_file)
+            temp_file.close()
+            temp_file_path = temp_file.name
 
-            extracted_lease, cost = claude_extractor.claude_extraction(buffer.getvalue(), claude_client)
+            extracted_lease, cost = claude_extractor.claude_extraction(temp_file_path, claude_client)
             print("Lease Extracted", extracted_lease)
             for key, value in extracted_lease.items():
                 existing = combined_extracted_data.get(key)
@@ -51,8 +51,8 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
                 elif not is_real_value(existing) and is_real_value(value):
                     combined_extracted_data[key] = value
             total_cost += cost
-            if(total_pages > chunk_size):
-                time.sleep(30)
+            
+            os.remove(temp_file_path)
         extracted_lease_data = combined_extracted_data
         if isinstance(extracted_lease_data, str):
             #if returned as string converts to json
