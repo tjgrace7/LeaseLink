@@ -41,6 +41,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
             print(f"Extracting chunk {chunk_index + 1}: pages {start + 1} to {end}")
 
             extracted_lease, cost = claude_extractor.claude_extraction(buffer.getvalue(), claude_client)
+            print("Lease Extracted", extracted_lease)
             for key, value in extracted_lease.items():
                 existing = combined_extracted_data.get(key)
 
@@ -73,23 +74,23 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         supabase_client.table('tenant').update({'Available': True}).eq('tenant_id', tenantid)
         
         print("Success")
+        print("Starting PDF text extraction + embedding")
+        total_embedding_cost = lease_chunker.extract_text_from_pdf(pdf_file, OpenAIclient, tenantid, auth_id, propertyid, unit_id,upload_session_id, get_pdf, company_id, job_id, bucket_name, get_pdf, qdrant_client, job_status, collectionName, total_pages)
+        job_status['status'] = 'success'
+        supabase_client.table('Upload_Job_Status').update({'job_info': job_status}).eq('job_id', job_id)
+    
+        cost_upload = {}
+
+        cost_upload['cost_per_upload'] = total_embedding_cost + total_cost
+        cost_upload['lease_id'] = lease_id
+        cost_upload['upload_session_id'] = upload_session_id
+        Supabase_api.supabase_post_request(supabase_client, [cost_upload], 'lease_documents')
 
     except Exception as e:
         print(f"GPT extraction or supabase insert failed: {e}")
         job_status['status'] = "error"
         Clear_Uploads(job_id, bucket_name, get_pdf, job_status)
     #Converts pdf to image, then to text, chunks text, embeds text, and converts to json payload for qdrant
-    print("Starting PDF text extraction + embedding")
-    total_embedding_cost = lease_chunker.extract_text_from_pdf(pdf_file, OpenAIclient, tenantid, auth_id, propertyid, unit_id,upload_session_id, get_pdf, company_id, job_id, bucket_name, get_pdf, qdrant_client, job_status, collectionName, total_pages)
-    job_status['status'] = 'success'
-    supabase_client.table('Upload_Job_Status').update({'job_info': job_status}).eq('job_id', job_id)
-    
-    cost_upload = {}
-
-    cost_upload['cost_per_upload'] = total_embedding_cost + total_cost
-    cost_upload['lease_id'] = lease_id
-    cost_upload['upload_session_id'] = upload_session_id
-    Supabase_api.supabase_post_request(supabase_client, [cost_upload], 'lease_documents')
 
 
 

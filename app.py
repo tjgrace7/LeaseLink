@@ -164,7 +164,7 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
 
         final_message, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data = Qdrant_ChatGPT.get_relevant_chunks(
             collectionName, qdrant_client, filtertype, entity_id, company_id,
-            message, OpenAIclient, oldmessages, supabase_client
+            message, OpenAIclient, claude_client, oldmessages, supabase_client
         )
 
         if final_message:

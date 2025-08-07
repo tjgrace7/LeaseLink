@@ -13,7 +13,7 @@ def claude_extraction(pdf, claude_client):
     now = datetime.now().strftime("%Y/%m/%d")
     start = datetime.now()
     pdf_base64 = encode_pdf_to_base64(pdf)
-
+    print("Encoded")
     # Make the API call with proper document structure
     response = claude_client.messages.create(
         model="claude-3-5-sonnet-20241022",
@@ -104,7 +104,7 @@ Please respond with a valid JSON object only."""
             }
         ],
     )
-
+    print("Message Success")
     # Extract the assistant's answer (which is expected to be JSON text) and save to file
     answer_text = response.content[0].text
     cost = response.usage.input_tokens*(.003/1000)+response.usage.output_tokens*(.015/1000)

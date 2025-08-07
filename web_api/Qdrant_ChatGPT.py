@@ -26,7 +26,7 @@ def extract_json_from_response(response_text: str):
         print("Json parsing error:", e)
         return None
  #Gets data from vector db that was just uploaded for ChatGPT
-def get_relevant_chunks(collection_Name, q_client, filtertype1, filterid1, company_id, message, openAI, oldData, supabase_client):
+def get_relevant_chunks(collection_Name, q_client, filtertype1, filterid1, company_id, message, openAI, claude, oldData, supabase_client):
     print("get_relevant_chunks")
     now = datetime.now()
     prompt_tokens = 0
@@ -40,10 +40,9 @@ def get_relevant_chunks(collection_Name, q_client, filtertype1, filterid1, compa
 
     try:
         print("GPT rephrase question")
-        message_summary = openAI.chat.completions.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": f"""
+        message_summary = claude.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            system=(f"""
 You are preparing a search query for a vector database (Qdrant) to help retrieve the most relevant lease documents for answering a property management question.
 
 Your goal is to rewrite or summarize the user's question in a way that improves semantic search relevance.
@@ -67,15 +66,19 @@ Land size is often expressed as square feet or acres. The answer may come from c
 
 Return a **single, semantically precise** version of the user's question that will help match the most relevant document chunks in the vector database.
 
-"""},
-                {"role": "user", "content": message}
+"""),
+            messages=[
+                {"role": "user", "content": [{
+                    'type': 'text',
+                    'text': message}]}
             ],
-            temperature=0.3
+            temperature=0.0,
+            max_tokens=4000
         )
         token_usage = message_summary.usage
-        prompt_tokens = token_usage.prompt_tokens
-        completion_tokens = token_usage.completion_tokens
-        input = message_summary.choices[0].message.content
+        prompt_tokens = token_usage.input_tokens
+        completion_tokens = token_usage.output_tokens
+        input = message_summary.content[0].text
 
         print("Embed Question")
         message_vector = openAI.embeddings.create(
@@ -175,13 +178,18 @@ Use this format exactly:
 """
 
         print("Messaging ChatGPT")
-        chat_response = openAI.chat.completions.create(
-            model="gpt-4",
+        chat_response = claude.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            system=(systemprompt),
             messages=[
-                {"role": "system", "content": systemprompt},
-                {"role": "user", "content": message}
+                {"role": "user", "content": [
+                    {
+                        'type': 'text',
+                        'text': message
+                    }]}
             ],
-            temperature=0.2
+            temperature=0.2,
+            max_tokens=4000
         )
         token_usage = chat_response.usage
         prompt_tokens += token_usage.prompt_tokens
