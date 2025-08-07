@@ -25,7 +25,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         total_pages = len(reader.pages)
         print("starting extraction")
 
-        chunk_size=100
+        chunk_size=50
         combined_extracted_data = {}
         total_cost = 0.0
 
@@ -51,7 +51,8 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
                 elif not is_real_value(existing) and is_real_value(value):
                     combined_extracted_data[key] = value
             total_cost += cost
-            time.sleep(30)
+            if(total_pages > 50):
+                time.sleep(30)
         extracted_lease_data = combined_extracted_data
         if isinstance(extracted_lease_data, str):
             #if returned as string converts to json
