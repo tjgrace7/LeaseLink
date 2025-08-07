@@ -51,7 +51,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
                 elif not is_real_value(existing) and is_real_value(value):
                     combined_extracted_data[key] = value
             total_cost += cost
-            if(total_pages > 50):
+            if(total_pages > chunk_size):
                 time.sleep(30)
         extracted_lease_data = combined_extracted_data
         if isinstance(extracted_lease_data, str):

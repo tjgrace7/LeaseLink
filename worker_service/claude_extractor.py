@@ -1,5 +1,6 @@
 from datetime import datetime
 import base64
+from anthropic import get_tokenizer
 
 
 
@@ -14,23 +15,7 @@ def claude_extraction(pdf, claude_client):
     pdf_base64 = encode_pdf_to_base64(pdf)
     print("Encoded")
     # Make the API call with proper document structure
-    response = claude_client.messages.create(
-        model="claude-3-5-sonnet-20241022",
-        max_tokens=4000,
-        temperature=0,
-        system=(
-            f"""You are a leasing document analyzer. Respond only with a JSON object containing all the requested fields. If information is not available in the document, omit that field. Perform calculations as needed and format dates as yyyy/mm/dd. For Current or Base Rent, CAM etc. 
-    When extracting cost-related fields (such as rent, CAM charges, or other expenses), use the current date: {now} to determine relevance. example ie if base_monthly_rent starts at $1679 but from 2/1/24-1/31/2025 it should 1782. And we are within that date range use that. If that is the last date range available, because the lease expired or another reason, use that
-    """
-
-        ),
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": """Read this lease and tell me:
+    prompt =  """Read this lease and tell me:
 
 Do calculations as necessary
 -lease_execution_date (The Day the lease takes affect (Often handwritten))
@@ -90,6 +75,26 @@ Do calculations as necessary
 -exclusivity_rights (Blocks the landlord from allowing any competing business.)
 
 Please respond with a valid JSON object only."""
+    tokenizer = get_tokenizer()
+    tokens = tokenizer.count_text_tokens(prompt +pdf_base64)
+    print("Total Tokens", tokens)
+    response = claude_client.messages.create(
+        model="claude-3-5-sonnet-20241022",
+        max_tokens=4000,
+        temperature=0,
+        system=(
+            f"""You are a leasing document analyzer. Respond only with a JSON object containing all the requested fields. If information is not available in the document, omit that field. Perform calculations as needed and format dates as yyyy/mm/dd. For Current or Base Rent, CAM etc. 
+    When extracting cost-related fields (such as rent, CAM charges, or other expenses), use the current date: {now} to determine relevance. example ie if base_monthly_rent starts at $1679 but from 2/1/24-1/31/2025 it should 1782. And we are within that date range use that. If that is the last date range available, because the lease expired or another reason, use that
+    """
+
+        ),
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": prompt
                     },
                     {
                         "type": "document",
