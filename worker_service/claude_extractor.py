@@ -1,6 +1,6 @@
 from datetime import datetime
 import base64
-from anthropic import get_tokenizer
+import tiktoken
 
 
 
@@ -14,6 +14,7 @@ def claude_extraction(pdf, claude_client):
     start = datetime.now()
     pdf_base64 = encode_pdf_to_base64(pdf)
     print("Encoded")
+    encoding = tiktoken.get_encoding('cl100k_base')
     # Make the API call with proper document structure
     prompt =  """Read this lease and tell me:
 
@@ -75,8 +76,8 @@ Do calculations as necessary
 -exclusivity_rights (Blocks the landlord from allowing any competing business.)
 
 Please respond with a valid JSON object only."""
-    tokenizer = get_tokenizer()
-    tokens = tokenizer.count_text_tokens(prompt +pdf_base64)
+    total_input = prompt + '\n\n' + pdf_base64
+    tokens = len(encoding.encode(total_input))
     print("Total Tokens", tokens)
     response = claude_client.messages.create(
         model="claude-3-5-sonnet-20241022",
