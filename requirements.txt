@@ -14,6 +14,9 @@ storage3==0.11.3
 openai==1.90.0
 tiktoken==0.9.0
 
+#Claude
+anthropic=0.60.0
+
 # Qdrant + Vector DB
 qdrant-client==1.14.3
 
