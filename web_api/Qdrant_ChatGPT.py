@@ -192,13 +192,13 @@ Use this format exactly:
             max_tokens=4000
         )
         token_usage = chat_response.usage
-        prompt_tokens += token_usage.prompt_tokens
+        prompt_tokens += token_usage.input_tokens
         prompt_cost = (prompt_tokens / 1000 * 0.01) + (embedding_token_count / 1000 * 0.00013)
-        completion_tokens += token_usage.completion_tokens
+        completion_tokens += token_usage.output_tokens
         completion_cost = completion_tokens / 1000 * 0.03
 
         print("total_cost", completion_cost + prompt_cost)
-        chat_message = chat_response.choices[0].message.content
+        chat_message = chat_response.content[0].text
 
         parts = chat_message.split("```json")
         final_message = parts[0].strip()
