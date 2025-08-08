@@ -48,7 +48,7 @@ def get_lease_column_names(supabase_client):
     except Exception as e:
         raise Exception(f"Supabase RPC failed: {e}")
 
-def document_upload_with_conversation(pdf_file, claude_client, chunk_size=10, verbose=False):
+def document_upload_with_conversation(pdf_file, claude_client, chunk_size=15, verbose=False):
     """
     Upload document in chunks and build conversation history for final analysis
     """
@@ -107,14 +107,14 @@ def document_upload_with_conversation(pdf_file, claude_client, chunk_size=10, ve
                 max_tokens=1024,
                 messages=conversation_messages
             )
-            
+            time.sleep(5)
             # Add Claude's response to conversation
             assistant_message = {
                 'role': 'assistant',
                 'content': response.content[0].text
             }
             conversation_messages.append(assistant_message)
-            
+            time.sleep(15)
             max_retries = 5
             base_delay = 60
             
@@ -135,6 +135,7 @@ def document_upload_with_conversation(pdf_file, claude_client, chunk_size=10, ve
                     else:
                         raise
                 
+            print("Section Success")
         finally:
             os.remove(temp_file_path)
     
