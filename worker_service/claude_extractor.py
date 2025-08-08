@@ -132,7 +132,7 @@ def document_upload_with_conversation(pdf_file, supabase_client, claude_client, 
     
     return conversation_messages
 
-def claude_extraction(pdf, claude_client, supabase_client, max_tokens=1000000, verbose=False):
+def claude_extraction(pdf, claude_client, supabase_client, verbose=False):
     """
     Extract lease information from PDF using Claude API with conversation history approach
     """
