@@ -48,7 +48,7 @@ def get_lease_column_names(supabase_client):
     except Exception as e:
         raise Exception(f"Supabase RPC failed: {e}")
 
-def document_upload_with_conversation(pdf_file, supabase_client, claude_client, chunk_size=15, verbose=False):
+def document_upload_with_conversation(pdf_file, claude_client, chunk_size=10, verbose=False):
     """
     Upload document in chunks and build conversation history for final analysis
     """
@@ -68,6 +68,7 @@ def document_upload_with_conversation(pdf_file, supabase_client, claude_client, 
         
         # Create chunk
         for i in range(start, end):
+            print(start, end)
             writer.add_page(reader.pages[i])
             
         # Save to temp file
