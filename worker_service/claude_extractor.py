@@ -115,6 +115,7 @@ def document_upload_with_conversation(pdf_file, claude_client, chunk_size=15, ve
             }
             conversation_messages.append(assistant_message)
             time.sleep(120)
+            print("Waiting Two Minutes")
             max_retries = 5
             base_delay = 60
             
