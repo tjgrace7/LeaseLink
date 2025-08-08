@@ -28,7 +28,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         total_pages = len(reader.pages)
         print("starting extraction")
 
-        chunk_size=25
+        chunk_size=15
         combined_extracted_data = {}
         for start in range(0, total_pages, chunk_size):
             writer = PdfWriter()
