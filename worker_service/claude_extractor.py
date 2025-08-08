@@ -115,7 +115,8 @@ def document_upload_with_conversation(pdf_file, claude_client, claude_model, ver
                 'content': response.content[0].text
             }
             conversation_messages.append(assistant_message)
-            time.sleep(60)
+            if(end < total_pages):
+                time.sleep(300)
             
             max_retries = 5
             base_delay = 60
