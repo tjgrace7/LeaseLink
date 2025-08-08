@@ -15,14 +15,7 @@ def is_real_value(val):
     return val and str(val).strip().lower() != 'n/a'
 
 def get_table_column_names(supabase_client, table_name: str) -> set:
-    response = supabase_client.rpc("execute_sql", {
-        "sql": f"""
-            SELECT column_name
-            FROM information_schema.columns
-            WHERE table_name = '{table_name}'
-              AND table_schema = 'public'
-        """
-    }).execute()
+    response = supabase_client.rpc('get_lease_column_names').execute()
 
     if response.error:
         raise Exception(f"Failed to fetch columns: {response.error.message}")
