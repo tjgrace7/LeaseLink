@@ -119,7 +119,7 @@ Do calculations as necessary
 
 Please respond with a valid JSON object only."""
 
-        system_message = f"""You are a leasing document analyzer. Respond only with a JSON object containing all the requested fields. If information is not available in the document, omit that field. Perform calculations as needed and format dates as yyyy/mm/dd. For Current or Base Rent, CAM etc. 
+        system_message = f"""You are a leasing document analyzer. Respond only with a JSON object containing all the requested fields. If information is not available in the document, omit that field. Do not add fields that are not requested. It is uploading to a database with these specfic columns and will break if they are changed. Perform calculations as needed and format dates as yyyy/mm/dd. For Current or Base Rent, CAM etc. 
 When extracting cost-related fields (such as rent, CAM charges, or other expenses), use the current date: {now} to determine relevance. example ie if base_monthly_rent starts at $1679 but from 2/1/24-1/31/2025 it should 1782. And we are within that date range use that. If that is the last date range available, because the lease expired or another reason, use that"""
 
         # Estimate tokens before API call
