@@ -122,7 +122,7 @@ def document_upload_with_conversation(pdf_file, supabase_client, claude_client, 
             if end < total_pages:
                 if verbose:
                     print("⏳ Waiting 30 seconds for rate limit...")
-                time.sleep(30)
+                time.sleep(60)
                 
         finally:
             os.remove(temp_file_path)
