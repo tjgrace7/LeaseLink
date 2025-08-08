@@ -8,6 +8,7 @@ from PyPDF2 import PdfReader, PdfWriter
 from io import BytesIO
 import tempfile
 import time
+import re
 
 def encode_pdf_to_base64(file_path):
     """Encode PDF file to base64 string"""
