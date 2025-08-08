@@ -1,23 +1,63 @@
 from datetime import datetime
 import base64
 import tiktoken
+from anthropic import Anthropic
+import os
 
-
-
-# Method 1: Upload file and reference by base64
 def encode_pdf_to_base64(file_path):
+    """Encode PDF file to base64 string"""
     with open(file_path, 'rb') as f:
         return base64.b64encode(f.read()).decode('utf-8')
 
-def claude_extraction(pdf, claude_client):
-    # Encode your PDF
-    now = datetime.now().strftime("%Y/%m/%d")
-    start = datetime.now()
-    pdf_base64 = encode_pdf_to_base64(pdf)
-    print("Encoded")
+def estimate_total_tokens(prompt, pdf_base64, system_message=""):
+    """Estimate total tokens before making API call"""
     encoding = tiktoken.get_encoding('cl100k_base')
-    # Make the API call with proper document structure
-    prompt =  """Read this lease and tell me:
+    
+    prompt_tokens = len(encoding.encode(prompt))
+    system_tokens = len(encoding.encode(system_message)) if system_message else 0
+    
+    # Rough estimate for document tokens (base64 length / 4)
+    document_tokens = len(pdf_base64) // 4
+    
+    total_estimated = prompt_tokens + system_tokens + document_tokens
+    
+    return {
+        'prompt_tokens': prompt_tokens,
+        'system_tokens': system_tokens,
+        'document_tokens': document_tokens,
+        'total_estimated': total_estimated
+    }
+
+def claude_extraction(pdf_path, claude_client, max_tokens=180000, verbose=False):
+    """
+    Extract lease information from PDF using Claude API
+    
+    Args:
+        pdf_path (str): Path to the PDF file
+        api_key (str, optional): Anthropic API key. If None, uses ANTHROPIC_API_KEY env var
+        max_tokens (int): Maximum tokens allowed (default 180k for safety)
+        verbose (bool): Print detailed information
+    
+    Returns:
+        tuple: (extracted_data_json_string, cost_in_dollars)
+        Returns (None, 0) if extraction fails
+    """
+    
+    #
+    
+    
+    try:
+        # Get current date for context
+        now = datetime.now().strftime("%Y/%m/%d")
+        start_time = datetime.now()
+        
+        # Encode the PDF
+        pdf_base64 = encode_pdf_to_base64(pdf_path)
+        if verbose:
+            print("✅ PDF encoded successfully")
+        
+        # Define the extraction prompt
+        prompt = """Read this lease and tell me:
 
 Do calculations as necessary
 -lease_execution_date (The Day the lease takes affect (Often handwritten))
@@ -77,45 +117,74 @@ Do calculations as necessary
 -exclusivity_rights (Blocks the landlord from allowing any competing business.)
 
 Please respond with a valid JSON object only."""
-    total_input = prompt + '\n\n' + pdf_base64
-    tokens = len(encoding.encode(total_input))
-    print("Total Tokens", tokens)
-    response = claude_client.messages.create(
-        model="claude-3-5-sonnet-20241022",
-        max_tokens=4000,
-        temperature=0,
-        system=(
-            f"""You are a leasing document analyzer. Respond only with a JSON object containing all the requested fields. If information is not available in the document, omit that field. Perform calculations as needed and format dates as yyyy/mm/dd. For Current or Base Rent, CAM etc. 
-    When extracting cost-related fields (such as rent, CAM charges, or other expenses), use the current date: {now} to determine relevance. example ie if base_monthly_rent starts at $1679 but from 2/1/24-1/31/2025 it should 1782. And we are within that date range use that. If that is the last date range available, because the lease expired or another reason, use that
-    """
 
-        ),
-        messages=[
-            {
-                "role": "user",
-                "content": [
-                    {
-                        "type": "text",
-                        "text": prompt
-                    },
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "application/pdf",
-                            "data": pdf_base64
+        system_message = f"""You are a leasing document analyzer. Respond only with a JSON object containing all the requested fields. If information is not available in the document, omit that field. Perform calculations as needed and format dates as yyyy/mm/dd. For Current or Base Rent, CAM etc. 
+When extracting cost-related fields (such as rent, CAM charges, or other expenses), use the current date: {now} to determine relevance. example ie if base_monthly_rent starts at $1679 but from 2/1/24-1/31/2025 it should 1782. And we are within that date range use that. If that is the last date range available, because the lease expired or another reason, use that"""
+
+        # Estimate tokens before API call
+        token_info = estimate_total_tokens(prompt, pdf_base64, system_message)
+        
+        if verbose:
+            print(f"📊 Token estimation:")
+            print(f"  Prompt: {token_info['prompt_tokens']:,}")
+            print(f"  System: {token_info['system_tokens']:,}")
+            print(f"  Document: {token_info['document_tokens']:,}")
+            print(f"  Total: {token_info['total_estimated']:,}")
+        
+        # Check token limit
+        if token_info['total_estimated'] > max_tokens:
+            if verbose:
+                print(f"❌ Token limit exceeded: {token_info['total_estimated']:,} > {max_tokens:,}")
+            return None, 0
+        
+        # Make API call
+        response = claude_client.messages.create(
+            model="claude-3-5-sonnet-20241022",
+            max_tokens=4000,
+            temperature=0,
+            system=system_message,
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {
+                            "type": "text",
+                            "text": prompt
+                        },
+                        {
+                            "type": "document",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "application/pdf",
+                                "data": pdf_base64
+                            }
                         }
-                    }
-                ]
-            }
-        ],
-    )
-    print("Message Success")
-    # Extract the assistant's answer (which is expected to be JSON text) and save to file
-    answer_text = response.content[0].text
-    cost = response.usage.input_tokens*(.003/1000)+response.usage.output_tokens*(.015/1000)
+                    ]
+                }
+            ],
+        )
+        
+        # Calculate cost
+        input_tokens = response.usage.input_tokens
+        output_tokens = response.usage.output_tokens
+        cost = (input_tokens * 0.003 / 1000) + (output_tokens * 0.015 / 1000)
+        
+        # Get extracted data
+        extracted_data = response.content[0].text
+        
+        if verbose:
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
+            print(f"✅ Extraction successful!")
+            print(f"  Input tokens: {input_tokens:,}")
+            print(f"  Output tokens: {output_tokens:,}")
+            print(f"  Cost: ${cost:.4f}")
+            print(f"  Duration: {duration:.2f}s")
+        
+        return extracted_data, cost
+        
+    except Exception as e:
+        if verbose:
+            print(f"❌ Error during extraction: {str(e)}")
+        return None, 0
 
-    end = datetime.now()
-    difference = end-start
-    print(f"Extraction time: {difference.total_seconds():.3f} seconds")
-    return answer_text, cost

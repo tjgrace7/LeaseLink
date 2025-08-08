@@ -28,7 +28,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         total_pages = len(reader.pages)
         print("starting extraction")
 
-        chunk_size=100
+        chunk_size=10
         combined_extracted_data = {}
         for start in range(0, total_pages, chunk_size):
             writer = PdfWriter()
@@ -41,7 +41,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
             temp_file.close()
             temp_file_path = temp_file.name
 
-            extracted_lease, cost = claude_extractor.claude_extraction(temp_file_path, claude_client)
+            extracted_lease, cost = claude_extractor.claude_extraction(temp_file_path, claude_client, verbose=True)
             print("Lease Extracted", extracted_lease)
             for key, value in extracted_lease.items():
                 existing = combined_extracted_data.get(key)
@@ -51,7 +51,8 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
                 elif not is_real_value(existing) and is_real_value(value):
                     combined_extracted_data[key] = value
             total_cost += cost
-            
+            if(total_pages > chunk_size):
+                time.sleep(30)
             os.remove(temp_file_path)
         extracted_lease_data = combined_extracted_data
         if isinstance(extracted_lease_data, str):
