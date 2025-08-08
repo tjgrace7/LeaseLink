@@ -22,7 +22,7 @@ from anthropic import Anthropic
 
 
 app = FastAPI()
-claude_model = 'claude-3-5-haiku-20240626'
+claude_model = 'claude-3-5-sonnet-20241022'
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://www.leaselink.ai", 'http://localhost:5173'],  # 👈 Add your local dev URL
