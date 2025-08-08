@@ -154,7 +154,7 @@ def claude_extraction(pdf, claude_client, supabase_client, verbose=False):
         
         # Upload document in chunks and build conversation
         conversation_messages = document_upload_with_conversation(
-            pdf, supabase_client, claude_client, chunk_size=15, verbose=verbose
+            pdf, claude_client, chunk_size=15, verbose=verbose
         )
         
         if verbose:
