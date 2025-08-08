@@ -29,7 +29,7 @@ def estimate_total_tokens(prompt, pdf_base64, system_message=""):
         'total_estimated': total_estimated
     }
 
-def claude_extraction(pdf_path, claude_client, max_tokens=500000, verbose=False):
+def claude_extraction(pdf_path, claude_client, max_tokens=1000000, verbose=False):
     """
     Extract lease information from PDF using Claude API
     
