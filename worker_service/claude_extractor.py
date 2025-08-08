@@ -107,14 +107,14 @@ def document_upload_with_conversation(pdf_file, claude_client, chunk_size=15, ve
                 max_tokens=1024,
                 messages=conversation_messages
             )
-            time.sleep(5)
+
             # Add Claude's response to conversation
             assistant_message = {
                 'role': 'assistant',
                 'content': response.content[0].text
             }
             conversation_messages.append(assistant_message)
-            time.sleep(15)
+            time.sleep(45)
             max_retries = 5
             base_delay = 60
             
