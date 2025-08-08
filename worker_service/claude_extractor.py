@@ -52,7 +52,7 @@ def document_upload_with_conversation(pdf_file, claude_client, claude_model, ver
     """
     Upload document in chunks and build conversation history for final analysis
     """
-    chunk_size = 20
+    chunk_size = 100
     reader = PdfReader(BytesIO(pdf_file))
     total_pages = len(reader.pages)
     
@@ -115,8 +115,8 @@ def document_upload_with_conversation(pdf_file, claude_client, claude_model, ver
                 'content': response.content[0].text
             }
             conversation_messages.append(assistant_message)
-            time.sleep(120)
-            print("Waiting Two Minutes")
+            time.sleep(15)
+            
             max_retries = 5
             base_delay = 60
             
@@ -144,7 +144,7 @@ def document_upload_with_conversation(pdf_file, claude_client, claude_model, ver
     if verbose:
         print("📝 All chunks uploaded. Conversation history built.")
     
-    return conversation_messages
+    return conversation_messages, total_pages
 
 def claude_extraction(pdf, claude_client, supabase_client, claude_model, verbose=False):
     """
@@ -156,7 +156,7 @@ def claude_extraction(pdf, claude_client, supabase_client, claude_model, verbose
         start_time = datetime.now()
         
         # Upload document in chunks and build conversation
-        conversation_messages = document_upload_with_conversation(
+        conversation_messages, total_pages = document_upload_with_conversation(
             pdf, claude_client, claude_model, verbose=verbose
         )
         
@@ -276,7 +276,7 @@ When extracting cost-related fields (such as rent, CAM charges, or other expense
             print(f"  Cost: ${cost:.4f}")
             print(f"  Duration: {duration:.2f}s")
         
-        return final_dict, cost
+        return final_dict, cost, total_pages
         
     except Exception as e:
         if verbose:

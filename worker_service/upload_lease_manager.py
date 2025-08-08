@@ -25,7 +25,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
     try:
 
 
-        extracted_lease_data, total_cost = claude_extractor.claude_extraction(pdf_file, claude_client, supabase_client, claude_model, verbose=True)
+        extracted_lease_data, total_cost, total_pages = claude_extractor.claude_extraction(pdf_file, claude_client, supabase_client, claude_model, verbose=True)
 
 
         if isinstance(extracted_lease_data, str):
