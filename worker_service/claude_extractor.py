@@ -52,7 +52,7 @@ def document_upload_with_conversation(pdf_file, claude_client, claude_model, ver
     """
     Upload document in chunks and build conversation history for final analysis
     """
-    chunk_size = 100
+    chunk_size = 99
     reader = PdfReader(BytesIO(pdf_file))
     total_pages = len(reader.pages)
     
@@ -68,8 +68,9 @@ def document_upload_with_conversation(pdf_file, claude_client, claude_model, ver
         end = min(start + chunk_size, total_pages)
         
         # Create chunk
+        print(start, end)
         for i in range(start, end):
-            print(start, end)
+           
             writer.add_page(reader.pages[i])
             
         # Save to temp file
