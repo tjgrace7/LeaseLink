@@ -115,7 +115,7 @@ def document_upload_with_conversation(pdf_file, claude_client, claude_model, ver
                 'content': response.content[0].text
             }
             conversation_messages.append(assistant_message)
-            time.sleep(15)
+            time.sleep(60)
             
             max_retries = 5
             base_delay = 60
@@ -262,7 +262,8 @@ When extracting cost-related fields (such as rent, CAM charges, or other expense
                     if verbose:
                         print(f"Skipping unknown key: {key}")
                     continue
-                final_dict[key] = value  # Fixed syntax error here
+                if is_real_value(value):
+                    final_dict[key] = value  # Fixed syntax error here
         except Exception as e:
             print("JSON parsing error in claude response", e)
             raise
