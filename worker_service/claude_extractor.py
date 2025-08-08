@@ -48,29 +48,124 @@ def get_lease_column_names(supabase_client):
     except Exception as e:
         raise Exception(f"Supabase RPC failed: {e}")
 
+def make_api_call_with_retry(claude_client, claude_model, conversation_messages, verbose=False, max_retries=3):
+    """
+    Make API call with exponential backoff retry logic
+    """
+    base_delay = 60
+    
+    for attempt in range(max_retries):
+        try:
+            response = claude_client.messages.create(
+                model=claude_model,
+                max_tokens=1024,
+                messages=conversation_messages
+            )
+            return response
+            
+        except Exception as e:
+            error_str = str(e).lower()
+            
+            # Handle different types of errors
+            if "rate_limit" in error_str or "429" in error_str:
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2 ** attempt)  # Exponential backoff
+                    if verbose:
+                        print(f"⚠️  Rate limit hit (attempt {attempt + 1}), waiting {delay}s...")
+                    time.sleep(delay)
+                else:
+                    if verbose:
+                        print(f"❌ Max retries exceeded for rate limiting")
+                    raise
+                    
+            elif "maximum of 100 pdf pages" in error_str:
+                if verbose:
+                    print(f"❌ PDF page limit exceeded - this should not happen with current chunk size")
+                raise Exception("PDF chunk size too large - exceeded 100 page limit")
+                
+            else:
+                # For other errors, don't retry
+                if verbose:
+                    print(f"❌ Non-retryable error: {e}")
+                raise
+
 def document_upload_with_conversation(pdf_file, claude_client, claude_model, verbose=False):
     """
     Upload document in chunks and build conversation history for final analysis
     """
-    chunk_size = 99
+    # Set chunk size to stay safely under 100 page limit
+    chunk_size = 95  # Conservative buffer under 100 page limit
     reader = PdfReader(BytesIO(pdf_file))
     total_pages = len(reader.pages)
     
     if verbose:
         print(f"📄 Starting extraction of {total_pages} pages in chunks of {chunk_size}")
     
-    # Initialize conversation history
+    # Handle documents <= 95 pages as single chunk
+    if total_pages <= chunk_size:
+        if verbose:
+            print(f"📄 Document has {total_pages} pages, processing as single chunk")
+        
+        # Process entire document at once
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+        writer = PdfWriter()
+        for i in range(total_pages):
+            writer.add_page(reader.pages[i])
+        writer.write(temp_file)
+        temp_file.close()
+        temp_file_path = temp_file.name
+        
+        try:
+            encoded = encode_pdf_to_base64(temp_file_path)
+            
+            conversation_messages = [{
+                'role': 'user',
+                'content': [
+                    {
+                        "type": "text",
+                        "text": f"I'm uploading a complete lease document with {total_pages} pages for analysis. Please acknowledge receipt and note any key information you see."
+                    },
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": encoded
+                        }
+                    }
+                ]
+            }]
+            
+            # Make single API call
+            response = make_api_call_with_retry(claude_client, claude_model, conversation_messages, verbose)
+            
+            # Add Claude's response to conversation
+            assistant_message = {
+                'role': 'assistant',
+                'content': response.content[0].text
+            }
+            conversation_messages.append(assistant_message)
+            
+            if verbose:
+                print("✅ Single chunk processed successfully")
+            
+        finally:
+            os.remove(temp_file_path)
+            
+        return conversation_messages, total_pages
+    
+    # For documents > 95 pages, process in chunks
     conversation_messages = []
     
-    # Process each chunk
     for start in range(0, total_pages, chunk_size):
         writer = PdfWriter()
         end = min(start + chunk_size, total_pages)
         
+        if verbose:
+            print(f"📄 Processing chunk {start//chunk_size + 1}: pages {start+1} to {end}")
+        
         # Create chunk
-        print(start, end)
         for i in range(start, end):
-           
             writer.add_page(reader.pages[i])
             
         # Save to temp file
@@ -104,11 +199,7 @@ def document_upload_with_conversation(pdf_file, claude_client, claude_model, ver
             conversation_messages.append(user_message)
             
             # Make API call with current conversation
-            response = claude_client.messages.create(
-                model=claude_model,
-                max_tokens=1024,
-                messages=conversation_messages
-            )
+            response = make_api_call_with_retry(claude_client, claude_model, conversation_messages, verbose)
 
             # Add Claude's response to conversation
             assistant_message = {
@@ -116,30 +207,16 @@ def document_upload_with_conversation(pdf_file, claude_client, claude_model, ver
                 'content': response.content[0].text
             }
             conversation_messages.append(assistant_message)
-            if(end < total_pages):
+            
+            # Add delay between chunks (except for last chunk)
+            if end < total_pages:
+                if verbose:
+                    print("⏳ Waiting 15 seconds before next chunk...")
                 time.sleep(15)
             
-            max_retries = 5
-            base_delay = 60
-            
-            for attempt in range(max_retries):
-                try:
-                    response = claude_client.messages.create(
-                        model='claude-3-5-sonnet-20241022',
-                        max_tokens=1024,
-                        messages=conversation_messages
-                    )
-                    break  # Success, exit retry loop
-                except Exception as e:
-                    if "rate_limit" in str(e).lower() and attempt < max_retries - 1:
-                        delay = base_delay * (2 ** attempt)  # Exponential backoff
-                        if verbose:
-                            print(f"⚠️  Rate limit hit (attempt {attempt + 1}), waiting {delay}s...")
-                        time.sleep(delay)
-                    else:
-                        raise
+            if verbose:
+                print("✅ Chunk processed successfully")
                 
-            print("Section Success")
         finally:
             os.remove(temp_file_path)
     
@@ -147,6 +224,31 @@ def document_upload_with_conversation(pdf_file, claude_client, claude_model, ver
         print("📝 All chunks uploaded. Conversation history built.")
     
     return conversation_messages, total_pages
+
+def merge_extraction_results(results_list):
+    """
+    Merge multiple JSON extraction results, appending values for duplicate keys
+    """
+    merged = {}
+    
+    for result in results_list:
+        if not result:
+            continue
+            
+        for key, value in result.items():
+            if key in merged:
+                # Key exists - append values
+                existing_value = str(merged[key]).strip()
+                new_value = str(value).strip()
+                
+                # Avoid duplicating identical values
+                if existing_value.lower() != new_value.lower():
+                    merged[key] = f"{existing_value}; {new_value}"
+            else:
+                # New key - add it
+                merged[key] = value
+    
+    return merged
 
 def claude_extraction(pdf, claude_client, supabase_client, claude_model, verbose=False):
     """
@@ -157,13 +259,16 @@ def claude_extraction(pdf, claude_client, supabase_client, claude_model, verbose
         now = datetime.now().strftime("%Y/%m/%d")
         start_time = datetime.now()
         
+        # Get allowed database column names
+        ALLOWED_KEYS = get_lease_column_names(supabase_client)
+        
         # Upload document in chunks and build conversation
         conversation_messages, total_pages = document_upload_with_conversation(
             pdf, claude_client, claude_model, verbose=verbose
         )
         
         if verbose:
-            print("✅ PDF processed in chunks, building final analysis request")
+            print("✅ PDF processed, building final analysis request")
         
         # Define the extraction prompt
         extraction_prompt = """Now that you have seen all chunks of this lease document, please analyze the complete document and extract the following information:
@@ -237,7 +342,7 @@ When extracting cost-related fields (such as rent, CAM charges, or other expense
         }
         conversation_messages.append(final_user_message)
         
-        # Make final API call for extraction
+        # Make final API call for extraction with higher max_tokens
         response = claude_client.messages.create(
             model=claude_model,
             max_tokens=4000,
@@ -251,8 +356,6 @@ When extracting cost-related fields (such as rent, CAM charges, or other expense
         output_tokens = response.usage.output_tokens
         cost = (input_tokens * 0.003 / 1000) + (output_tokens * 0.015 / 1000)
         
-        ALLOWED_KEYS = get_lease_column_names(supabase_client)
-        
         # Get extracted data
         extracted_data = response.content[0].text
         
@@ -265,7 +368,7 @@ When extracting cost-related fields (such as rent, CAM charges, or other expense
                         print(f"Skipping unknown key: {key}")
                     continue
                 if is_real_value(value):
-                    final_dict[key] = value  # Fixed syntax error here
+                    final_dict[key] = value
         except Exception as e:
             print("JSON parsing error in claude response", e)
             raise
@@ -274,14 +377,16 @@ When extracting cost-related fields (such as rent, CAM charges, or other expense
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
             print(f"✅ Extraction successful!")
+            print(f"  Processed {total_pages} pages")
             print(f"  Input tokens: {input_tokens:,}")
             print(f"  Output tokens: {output_tokens:,}")
             print(f"  Cost: ${cost:.4f}")
             print(f"  Duration: {duration:.2f}s")
+            print(f"  Final extracted fields: {len(final_dict)}")
         
         return final_dict, cost, total_pages
         
     except Exception as e:
         if verbose:
             print(f"❌ Error during extraction: {str(e)}")
-        return None, 0
+        return None, 0, 0
