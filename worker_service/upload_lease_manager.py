@@ -51,7 +51,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
             temp_file_path = temp_file.name
 
             extracted_lease, cost = claude_extractor.claude_extraction(temp_file_path, claude_client, verbose=True)
-            ALLOWED_KEYS = get_table_column_names(supabase_client, 'lease_documents')
+            ALLOWED_KEYS = get_lease_column_names(supabase_client, 'lease_documents')
             print("Lease Extracted", extracted_lease)
             for key, value in extracted_lease.items():
 
