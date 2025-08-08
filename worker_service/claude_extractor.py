@@ -114,15 +114,25 @@ def document_upload_with_conversation(pdf_file, supabase_client, claude_client, 
             }
             conversation_messages.append(assistant_message)
             
-            if verbose:
-                print(f"✅ Processed chunk {start//chunk_size + 1}: pages {start+1}-{end}")
-                print(f"   Claude response: {response.content[0].text[:100]}...")
+            max_retries = 5
+            base_delay = 60
             
-            # Rate limiting - wait between chunks (except for last chunk)
-            if end < total_pages:
-                if verbose:
-                    print("⏳ Waiting 30 seconds for rate limit...")
-                time.sleep(60)
+            for attempt in range(max_retries):
+                try:
+                    response = claude_client.messages.create(
+                        model='claude-3-5-sonnet-20241022',
+                        max_tokens=1024,
+                        messages=conversation_messages
+                    )
+                    break  # Success, exit retry loop
+                except Exception as e:
+                    if "rate_limit" in str(e).lower() and attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)  # Exponential backoff
+                        if verbose:
+                            print(f"⚠️  Rate limit hit (attempt {attempt + 1}), waiting {delay}s...")
+                        time.sleep(delay)
+                    else:
+                        raise
                 
         finally:
             os.remove(temp_file_path)
