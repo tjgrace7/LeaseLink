@@ -36,7 +36,7 @@ def make_api_call_with_retry(claude_client, claude_model, conversation_messages,
     """
     base_delay = 60
     now = datetime.now()
-    system_message = f"""You are a leasing document analyzer. Respond only with a JSON object containing all the requested fields. If information is not available, omit that field. Use exact keys from the prompt. Format all dates as yyyy/mm/dd. Use the current date {now} to determine relevant rent or cost values."""
+    system_message = f"""You are a leasing document analyzer. Respond only with a JSON object containing all the requested fields. If information is not available, omit that field. Use exact keys from the prompt. Format all dates as yyyy/mm/dd.  Use the current date {now} to determine relevant rent or cost values."""
     for attempt in range(max_retries):
         try:
             response = claude_client.messages.create(
@@ -76,27 +76,32 @@ def make_api_call_with_retry(claude_client, claude_model, conversation_messages,
 
 def merge_extraction_results(results_list):
     """
-    Merge multiple JSON extraction results, appending values for duplicate keys
+    Merge multiple JSON extraction results, appending values for duplicate keys.
+    Skip any 'date' keys if the value is not in yyyy/mm/dd format.
     """
     merged = {}
-    
+    date_pattern = re.compile(r"^\d{4}/\d{2}/\d{2}$")  # Matches yyyy/mm/dd exactly
+
     for result in results_list:
         if not result:
             continue
-            
+
         for key, value in result.items():
+            # Skip if key looks like a date field but value is not formatted correctly
+            if "date" in key.lower():
+                if not isinstance(value, str) or not date_pattern.match(value.strip()):
+                    continue  # ❌ Skip this key-value entirely
+
             if key in merged:
-                # Key exists - append values
                 existing_value = str(merged[key]).strip()
                 new_value = str(value).strip()
-                
+
                 # Avoid duplicating identical values
                 if existing_value.lower() != new_value.lower():
                     merged[key] = f"{existing_value}; {new_value}"
             else:
-                # New key - add it
                 merged[key] = value
-    
+
     return merged
 
 def claude_extraction(pdf, claude_client, supabase_client, claude_model, verbose=False):
