@@ -16,12 +16,13 @@ def is_real_value(val):
 
 
 def get_lease_column_names(supabase_client):
-    response = supabase_client.rpc("get_lease_column_names").execute()
-
-    if not response.data or response.status_code >= 400:
-        raise Exception(f"Supabase RPC failed: {response.status_code} {response.data}")
-    
-    return {row['column_name'] for row in response.data}
+    try:
+        response = supabase_client.rpc("get_lease_column_names").execute()
+        if not response.data:
+            raise Exception("RPC returned no data.")
+        return {row['column_name'] for row in response.data}
+    except Exception as e:
+        raise Exception(f"Supabase RPC failed: {e}")
 
 def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_name, company_id, collectionName, OpenAIclient, qdrant_client, supabase_client, job_id, job_status, claude_client):
     load_dotenv()
