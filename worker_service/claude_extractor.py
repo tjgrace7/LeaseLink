@@ -14,24 +14,6 @@ def encode_pdf_to_base64(file_path):
     with open(file_path, 'rb') as f:
         return base64.b64encode(f.read()).decode('utf-8')
 
-def estimate_total_tokens(prompt, pdf_base64, system_message=""):
-    """Estimate total tokens before making API call"""
-    encoding = tiktoken.get_encoding('cl100k_base')
-    
-    prompt_tokens = len(encoding.encode(prompt))
-    system_tokens = len(encoding.encode(system_message)) if system_message else 0
-    
-    # Rough estimate for document tokens (base64 length / 4)
-    document_tokens = len(pdf_base64) // 4
-    
-    total_estimated = prompt_tokens + system_tokens + document_tokens
-    
-    return {
-        'prompt_tokens': prompt_tokens,
-        'system_tokens': system_tokens,
-        'document_tokens': document_tokens,
-        'total_estimated': total_estimated
-    }
 
 def is_real_value(val):
     if not val:
@@ -53,13 +35,14 @@ def make_api_call_with_retry(claude_client, claude_model, conversation_messages,
     Make API call with exponential backoff retry logic
     """
     base_delay = 60
-    
+    system_message = f"""You are a leasing document analyzer. Respond only with a JSON object containing all the requested fields. If information is not available, omit that field. Use exact keys from the prompt. Format all dates as yyyy/mm/dd. Use the current date {now} to determine relevant rent or cost values."""
     for attempt in range(max_retries):
         try:
             response = claude_client.messages.create(
                 model=claude_model,
                 max_tokens=1024,
-                messages=conversation_messages
+                messages=conversation_messages,
+                system=system_message
             )
             return response
             
@@ -89,141 +72,6 @@ def make_api_call_with_retry(claude_client, claude_model, conversation_messages,
                     print(f"❌ Non-retryable error: {e}")
                 raise
 
-def document_upload_with_conversation(pdf_file, claude_client, claude_model, verbose=False):
-    """
-    Upload document in chunks and build conversation history for final analysis
-    """
-    # Set chunk size to stay safely under 100 page limit
-    chunk_size = 95  # Conservative buffer under 100 page limit
-    reader = PdfReader(BytesIO(pdf_file))
-    total_pages = len(reader.pages)
-    
-    if verbose:
-        print(f"📄 Starting extraction of {total_pages} pages in chunks of {chunk_size}")
-    
-    # Handle documents <= 95 pages as single chunk
-    if total_pages <= chunk_size:
-        if verbose:
-            print(f"📄 Document has {total_pages} pages, processing as single chunk")
-        
-        # Process entire document at once
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
-        writer = PdfWriter()
-        for i in range(total_pages):
-            writer.add_page(reader.pages[i])
-        writer.write(temp_file)
-        temp_file.close()
-        temp_file_path = temp_file.name
-        
-        try:
-            encoded = encode_pdf_to_base64(temp_file_path)
-            
-            conversation_messages = [{
-                'role': 'user',
-                'content': [
-                    {
-                        "type": "text",
-                        "text": f"I'm uploading a complete lease document with {total_pages} pages for analysis. Please acknowledge receipt and note any key information you see."
-                    },
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "application/pdf",
-                            "data": encoded
-                        }
-                    }
-                ]
-            }]
-            
-            # Make single API call
-            response = make_api_call_with_retry(claude_client, claude_model, conversation_messages, verbose)
-            
-            # Add Claude's response to conversation
-            assistant_message = {
-                'role': 'assistant',
-                'content': response.content[0].text
-            }
-            conversation_messages.append(assistant_message)
-            
-            if verbose:
-                print("✅ Single chunk processed successfully")
-            
-        finally:
-            os.remove(temp_file_path)
-            
-        return conversation_messages, total_pages
-    
-    # For documents > 95 pages, process in chunks
-    conversation_messages = []
-    
-    for start in range(0, total_pages, chunk_size):
-        writer = PdfWriter()
-        end = min(start + chunk_size, total_pages)
-        
-        if verbose:
-            print(f"📄 Processing chunk {start//chunk_size + 1}: pages {start+1} to {end}")
-        
-        # Create chunk
-        for i in range(start, end):
-            writer.add_page(reader.pages[i])
-            
-        # Save to temp file
-        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
-        writer.write(temp_file)
-        temp_file.close()
-        temp_file_path = temp_file.name
-        
-        try:
-            encoded = encode_pdf_to_base64(temp_file_path)
-            
-            # Add user message for this chunk
-            user_message = {
-                'role': 'user',
-                'content': [
-                    {
-                        "type": "text",
-                        "text": f"I'm uploading a lease document in chunks for analysis. Here are pages {start+1} through {end} (chunk {start//chunk_size + 1} of {(total_pages-1)//chunk_size + 1}). Please acknowledge receipt and note any key information you see."
-                    },
-                    {
-                        "type": "document",
-                        "source": {
-                            "type": "base64",
-                            "media_type": "application/pdf",
-                            "data": encoded
-                        }
-                    }
-                ]
-            }
-            
-            conversation_messages.append(user_message)
-            
-            # Make API call with current conversation
-            response = make_api_call_with_retry(claude_client, claude_model, conversation_messages, verbose)
-
-            # Add Claude's response to conversation
-            assistant_message = {
-                'role': 'assistant',
-                'content': response.content[0].text
-            }
-            conversation_messages.append(assistant_message)
-            
-            # Add delay between chunks (except for last chunk)
-            if end < total_pages:
-                if verbose:
-                    print("⏳ Waiting 15 seconds before next chunk...")
-                time.sleep(15)
-            
-            if verbose:
-                print("✅ Chunk processed successfully")
-                
-        finally:
-            os.remove(temp_file_path)
-    
-    if verbose:
-        print("📝 All chunks uploaded. Conversation history built.")
-    
-    return conversation_messages, total_pages
 
 def merge_extraction_results(results_list):
     """
@@ -251,141 +99,147 @@ def merge_extraction_results(results_list):
     return merged
 
 def claude_extraction(pdf, claude_client, supabase_client, claude_model, verbose=False):
-    """
-    Extract lease information from PDF using Claude API with conversation history approach
-    """
-    try:
-        # Get current date for context
-        now = datetime.now().strftime("%Y/%m/%d")
-        start_time = datetime.now()
-        
-        # Get allowed database column names
-        ALLOWED_KEYS = get_lease_column_names(supabase_client)
-        
-        # Upload document in chunks and build conversation
-        conversation_messages, total_pages = document_upload_with_conversation(
-            pdf, claude_client, claude_model, verbose=verbose
-        )
-        
-        if verbose:
-            print("✅ PDF processed, building final analysis request")
-        
-        # Define the extraction prompt
-        extraction_prompt = """Now that you have seen all chunks of this lease document, please analyze the complete document and extract the following information:
 
-Do calculations as necessary
--lease_execution_date (The Day the lease takes affect (Often handwritten))
--base_rent_monthly (Price of rent per month for the building before expenses. )
--rent_escalation (Give details on the rent schedule during the initial lease. List by date and amount.) 
--security_deposit_amount (The amount the rent has to put as a "down payment" to hold there space. Is paid back at the end of the lease if the property is left in good condition.) 
--base_rent_psf (The Per Square Foot price for Base Rent (Calculate: Annual Rent / SF)) 
--base_rent_annually (Calculate: Base rent amount paid across 12 months) 
--operating_expenses_CAM_psf (CAM + operating expenses per square foot. That includes taxes and Insurance (Calculate: monthly/ SF)
--operating_expenses_CAM_monthly (Monthly estimated amount that tenants are pay in all expenses they are responsible for via the lease. That includes taxes and insurance monthly)  
--property_taxes (A summary of who has responsibility to pay the property taxes for the building.) 
--insurance_costs (A summary of insurance expectations for both the tenant and the Landlord.) 
--CAM_Summary (Make note of any operating expenses not allowed to be charged back to the tenant.) 
--tenant_reimbursements (A summary of the system in which the landlord is able to bill the tenant for expenses they initially paid for or the rights in which the tenants have to recoup the money in which they overpaid for building expenses.) 
--insurance_requirements (Insurance requirements for the renters of the space. (General or more probably liability)) 
--lease_commencement_date (The Day the Lease takes effect, yyyy/mm/dd force into format) 
--lease_expiration_date (Day that the lease ends before any options to renew. Use the formula lease commencement date + term if required. Use yyyy/mm/dd force into format) 
--delivery_possession_date (The day the tenants may access the space, yyyy/mm/dd) 
--CAM_start_date (The date in which the tenant is responsible for paying estimated CAM amounts, yyyy/mm/dd force into format) 
--rent_abatement_end (the date where the tenants rent abatement runs out. Format yyyy/mm/dd) 
--rent_commencement_date (Date that rent starts, yyyy/mm/dd force into format)
--Property_Address (The listed address of the property) 
--suite_identifier (The number or letter of the suite without the address if applicable) 
--lease_term (Length of lease term in months)
--renewal_notice_deadline (The amount of time before the lease expires that the tenant has to let the landlord know they are interested in renewing) 
--option_exercise_deadlines (The time in which the tenant must have accepted the option to renew) 
--renewal_options (The amount of options the tenant has and the terms that change upon the commencement of these options.)
--termination_rights (Any terms that allow either party to terminate the lease early.
--expansion_contraction_rights (The provisions that allow the tenant to grow into more space or shrink out of other space.) 
--co_tenancy_clauses (Obligations that must be met by the landlord in accordance to other tenants and if not met the consequences.) 
--purchase_option (Options the tenant has to purchase the building in within the terms of the lease.) 
--rentable_square_footage (Useable SF + share of common areas (hallways, restrooms, etc.)) 
--usable_square_footage (The amount of square footage in the lease) 
--premises_description (Gives a more general and knowledgeable description of the rentable area) 
--parking_allocation (How much parking the tenant gets.) 
--storage_additional_space (If any storage is allotted or additional space is allotted to the tenant) 
--tenant_maintenance_responsibilities (What is the Lessee's/Tenant responsibility to maintain and repair the unit) 
--landlord_maintenance_responsibilities (What is the Landlord's/Property Managers responsibility to maintain and repair the building/unit) 
--hvac_responsibilities (The HVAC responsibilities in detail) 
--utility_responsibilities (Utility Responsibility in detail) 
--default_and_remedies (The actions and ability to take actions of either part in the event of default by the other.) 
--assignment_and_subletting (Is subletting allowed in the space? If so, under what terms and conditions?) 
--indemnity_clauses (The landlords protection from being held legally liable for anything. (Tenant can't sue landlord)) 
--force_majeure (excuses one or both parties from performing their obligations when extraordinary events occur that are outside their control.) 
--estoppel_certificate_required (The requirement that tenants answer certain questions in certain occasions. Normally when selling or refinancing.) 
--signage_rights (What signage rights the tenant has) 
--permitted_use (What type of business is permitted to use the unit?) 
--exclusive_use_clause (Gives the tenant permission to be the sole operator allowed to do something.) 
--guarantor_information (the details about any person or entity that guarantees the tenant's obligations under the lease.) 
--tenant_improvement_allowance (The amount the Landlord gives to the tenant to improve the property for the tenants use.) 
--holdover_terms (Terms that apply when the tenant overstays their lease without a renewal.) 
--landlord_work (Work that is the responsibility of the landlord, normally before the tenant moves in.) 
--Tenant_work (The work or improvements that the tenant is held responsible if applicable) 
--security_deposit_term (The terms that define security deposit rules.) 
--ROFR_ROFO_clauses (Right of First Refusal clauses or Right of First Offer clauses) 
--security_access_rights (The rights of security and the limits to the landlords access.) 
--exclusivity_rights (Blocks the landlord from allowing any competing business.)
+    try:
+        start_time = datetime.now()
+        ALLOWED_KEYS = get_lease_column_names(supabase_client)
+
+        reader = PdfReader(BytesIO(pdf))
+        total_pages = len(reader.pages)
+        chunk_size = 95
+        all_results = []
+
+        extraction_prompt = """Now that you have seen this lease document chunk, please extract the following information. Do calculations as necessary. Respond only with a valid JSON object using these keys. Omit fields that aren't found:
+
+- lease_execution_date
+- base_rent_monthly
+- rent_escalation
+- security_deposit_amount
+- base_rent_psf
+- base_rent_annually
+- operating_expenses_CAM_psf
+- operating_expenses_CAM_monthly
+- property_taxes
+- insurance_costs
+- CAM_Summary
+- tenant_reimbursements
+- insurance_requirements
+- lease_commencement_date
+- lease_expiration_date
+- delivery_possession_date
+- CAM_start_date
+- rent_abatement_end
+- rent_commencement_date
+- Property_Address
+- suite_identifier
+- lease_term
+- renewal_notice_deadline
+- option_exercise_deadlines
+- renewal_options
+- termination_rights
+- expansion_contraction_rights
+- co_tenancy_clauses
+- purchase_option
+- rentable_square_footage
+- usable_square_footage
+- premises_description
+- parking_allocation
+- storage_additional_space
+- tenant_maintenance_responsibilities
+- landlord_maintenance_responsibilities
+- hvac_responsibilities
+- utility_responsibilities
+- default_and_remedies
+- assignment_and_subletting
+- indemnity_clauses
+- force_majeure
+- estoppel_certificate_required
+- signage_rights
+- permitted_use
+- exclusive_use_clause
+- guarantor_information
+- tenant_improvement_allowance
+- holdover_terms
+- landlord_work
+- Tenant_work
+- security_deposit_term
+- ROFR_ROFO_clauses
+- security_access_rights
+- exclusivity_rights
 
 Please respond with a valid JSON object only."""
 
-        system_message = f"""You are a leasing document analyzer. You have now seen all chunks of a lease document. Respond only with a JSON object containing all the requested fields. If information is not available in the document, omit that field. Do not add JSON Keys that are not in the user message. It is uploading to a database with these specific column names and will break if they are changed or additional columns are added. Perform calculations as needed and format dates as yyyy/mm/dd. For Current or Base Rent, CAM etc. 
-When extracting cost-related fields (such as rent, CAM charges, or other expenses), use the current date: {now} to determine relevance. example ie if base_monthly_rent starts at $1679 but from 2/1/24-1/31/2025 it should 1782. And we are within that date range use that. If that is the last date range available, because the lease expired or another reason, use that"""
+        for start in range(0, total_pages, chunk_size):
+            end = min(start + chunk_size, total_pages)
+            writer = PdfWriter()
 
-        # Add final extraction request to conversation
-        final_user_message = {
-            'role': 'user',
-            'content': extraction_prompt
-        }
-        conversation_messages.append(final_user_message)
-        
-        # Make final API call for extraction with higher max_tokens
-        response = claude_client.messages.create(
-            model=claude_model,
-            max_tokens=4000,
-            temperature=0,
-            system=system_message,
-            messages=conversation_messages
-        )
-        
-        # Calculate cost
-        input_tokens = response.usage.input_tokens
-        output_tokens = response.usage.output_tokens
-        cost = (input_tokens * 0.003 / 1000) + (output_tokens * 0.015 / 1000)
-        
-        # Get extracted data
-        extracted_data = response.content[0].text
-        
-        try: 
-            extracted_dict = json.loads(extracted_data)
-            final_dict = {}
-            for key, value in extracted_dict.items():
-                if key not in ALLOWED_KEYS:
+            for i in range(start, end):
+                writer.add_page(reader.pages[i])
+
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+            writer.write(temp_file)
+            temp_file.close()
+            temp_path = temp_file.name
+
+            try:
+                encoded = encode_pdf_to_base64(temp_path)
+
+                messages = [{
+                    'role': 'user',
+                    'content': [
+                        { "type": "text", "text": extraction_prompt },
+                        {
+                            "type": "document",
+                            "source": {
+                                "type": "base64",
+                                "media_type": "application/pdf",
+                                "data": encoded
+                            }
+                        }
+                    ]
+                }]
+
+                if verbose:
+                    print(f"📄 Sending pages {start+1}-{end} to Claude")
+
+                response = make_api_call_with_retry(
+                    claude_client, claude_model, messages, verbose
+                )
+
+                raw_text = response.content[0].text
+                try:
+                    parsed = json.loads(raw_text)
+                    cleaned = {
+                        key: value
+                        for key, value in parsed.items()
+                        if key in ALLOWED_KEYS and is_real_value(value)
+                    }
+                    all_results.append(cleaned)
                     if verbose:
-                        print(f"Skipping unknown key: {key}")
+                        print(f"✅ Parsed chunk {start//chunk_size + 1} successfully")
+                except Exception as e:
+                    print(f"❌ JSON parsing error in chunk {start+1}-{end}: {e}")
+                    print(f"Raw response: {raw_text[:300]}...")
                     continue
-                if is_real_value(value):
-                    final_dict[key] = value
-        except Exception as e:
-            print("JSON parsing error in claude response", e)
-            raise
-            
+
+            finally:
+                os.remove(temp_path)
+
+            if end < total_pages:
+                time.sleep(15)
+
+        final_result = merge_extraction_results(all_results)
+
         if verbose:
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
-            print(f"✅ Extraction successful!")
-            print(f"  Processed {total_pages} pages")
-            print(f"  Input tokens: {input_tokens:,}")
-            print(f"  Output tokens: {output_tokens:,}")
-            print(f"  Cost: ${cost:.4f}")
-            print(f"  Duration: {duration:.2f}s")
-            print(f"  Final extracted fields: {len(final_dict)}")
-        
-        return final_dict, cost, total_pages
-        
+            print(f"✅ All chunks processed successfully")
+            print(f"📄 Total pages: {total_pages}")
+            print(f"🧩 Final extracted fields: {len(final_result)}")
+            print(f"⏱️ Duration: {duration:.2f} seconds")
+
+        return final_result, 0, total_pages  # cost not calculated here
+
     except Exception as e:
         if verbose:
             print(f"❌ Error during extraction: {str(e)}")
