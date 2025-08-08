@@ -48,10 +48,11 @@ def get_lease_column_names(supabase_client):
     except Exception as e:
         raise Exception(f"Supabase RPC failed: {e}")
 
-def document_upload_with_conversation(pdf_file, claude_client, claude_model, chunk_size=10, verbose=False):
+def document_upload_with_conversation(pdf_file, claude_client, claude_model, verbose=False):
     """
     Upload document in chunks and build conversation history for final analysis
     """
+    chunk_size = 20
     reader = PdfReader(BytesIO(pdf_file))
     total_pages = len(reader.pages)
     
