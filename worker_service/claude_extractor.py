@@ -35,6 +35,7 @@ def make_api_call_with_retry(claude_client, claude_model, conversation_messages,
     Make API call with exponential backoff retry logic
     """
     base_delay = 60
+    now = datetime.now()
     system_message = f"""You are a leasing document analyzer. Respond only with a JSON object containing all the requested fields. If information is not available, omit that field. Use exact keys from the prompt. Format all dates as yyyy/mm/dd. Use the current date {now} to determine relevant rent or cost values."""
     for attempt in range(max_retries):
         try:
