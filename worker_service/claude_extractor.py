@@ -3,6 +3,7 @@ import base64
 import tiktoken
 from anthropic import Anthropic
 import os
+import json
 
 def encode_pdf_to_base64(file_path):
     """Encode PDF file to base64 string"""
@@ -28,7 +29,7 @@ def estimate_total_tokens(prompt, pdf_base64, system_message=""):
         'total_estimated': total_estimated
     }
 
-def claude_extraction(pdf_path, claude_client, max_tokens=180000, verbose=False):
+def claude_extraction(pdf_path, claude_client, max_tokens=200000, verbose=False):
     """
     Extract lease information from PDF using Claude API
     
@@ -172,6 +173,11 @@ When extracting cost-related fields (such as rent, CAM charges, or other expense
         # Get extracted data
         extracted_data = response.content[0].text
         
+        try: 
+            extracted_dict = json.loads(extracted_data)
+        except Exception as e:
+            print("JSON parsing error in claude response", e)
+            raise
         if verbose:
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
@@ -181,7 +187,7 @@ When extracting cost-related fields (such as rent, CAM charges, or other expense
             print(f"  Cost: ${cost:.4f}")
             print(f"  Duration: {duration:.2f}s")
         
-        return extracted_data, cost
+        return extracted_dict, cost
         
     except Exception as e:
         if verbose:
