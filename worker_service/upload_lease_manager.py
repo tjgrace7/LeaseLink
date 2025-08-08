@@ -11,18 +11,7 @@ import time
 import tempfile
 import os
 
-def is_real_value(val):
-    return val and str(val).strip().lower() != 'n/a'
 
-
-def get_lease_column_names(supabase_client):
-    try:
-        response = supabase_client.rpc("get_lease_column_names").execute()
-        if not response.data:
-            raise Exception("RPC returned no data.")
-        return {row['column_name'] for row in response.data}
-    except Exception as e:
-        raise Exception(f"Supabase RPC failed: {e}")
 
 def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_name, company_id, collectionName, OpenAIclient, qdrant_client, supabase_client, job_id, job_status, claude_client):
     load_dotenv()
@@ -31,50 +20,14 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
     extracted_lease_data = {}
 
     pdf_file = Supabase_api.download_file(supabase_client, bucket_name, get_pdf)
-    reader = ''
+
     total_cost = 0.0
     try:
-        reader = PdfReader(BytesIO(pdf_file))
-        total_pages = len(reader.pages)
-        print("starting extraction")
 
-        chunk_size=15
-        combined_extracted_data = {}
-        for start in range(0, total_pages, chunk_size):
-            writer = PdfWriter()
-            end = min(start+chunk_size, total_pages)
-            for i in range(start, end):
-                writer.add_page(reader.pages[i])
-            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
 
-            writer.write(temp_file)
-            temp_file.close()
-            temp_file_path = temp_file.name
+        extracted_lease_data, total_cost = claude_extractor.claude_extraction(pdf_file, claude_client, verbose=True)
 
-            extracted_lease, cost = claude_extractor.claude_extraction(temp_file_path, claude_client, verbose=True)
-            ALLOWED_KEYS = get_lease_column_names(supabase_client)
-            print("Lease Extracted", extracted_lease)
-            for key, value in extracted_lease.items():
 
-                if key not in ALLOWED_KEYS:
-                    print(f"Skipping unknown key: {key}")
-                    continue
-                existing = combined_extracted_data.get(key)
-
-                if key not in combined_extracted_data:
-                    combined_extracted_data[key] = value
-                elif not is_real_value(existing) and is_real_value(value):
-                    combined_extracted_data[key] = value
-                elif is_real_value(existing) and is_real_value(value):
-                    if not isinstance(existing, list):
-                        combined_extracted_data[key] = [existing]
-                    if value not in combined_extracted_data[key]:
-                        combined_extracted_data[key].append(value)
-            total_cost += cost
-            if(total_pages > chunk_size):
-                time.sleep(30)
-            os.remove(temp_file_path)
-        extracted_lease_data = combined_extracted_data
         if isinstance(extracted_lease_data, str):
             #if returned as string converts to json
             lease_data = json.loads(extracted_lease_data)

@@ -4,6 +4,10 @@ import tiktoken
 from anthropic import Anthropic
 import os
 import json
+from PyPDF2 import PdfReader, PdfWriter
+from io import BytesIO
+import tempfile
+import time
 
 def encode_pdf_to_base64(file_path):
     """Encode PDF file to base64 string"""
@@ -29,36 +33,124 @@ def estimate_total_tokens(prompt, pdf_base64, system_message=""):
         'total_estimated': total_estimated
     }
 
-def claude_extraction(pdf_path, claude_client, max_tokens=1000000, verbose=False):
+def is_real_value(val):
+    if not val:
+        return False
+    cleaned = str(val).strip().lower()
+    return cleaned not in {'n/a', 'none specified', 'not specified'}
+
+def get_lease_column_names(supabase_client):
+    try:
+        response = supabase_client.rpc("get_lease_column_names").execute()
+        if not response.data:
+            raise Exception("RPC returned no data.")
+        return {row['column_name'] for row in response.data}
+    except Exception as e:
+        raise Exception(f"Supabase RPC failed: {e}")
+
+def document_upload_with_conversation(pdf_file, supabase_client, claude_client, chunk_size=15, verbose=False):
     """
-    Extract lease information from PDF using Claude API
-    
-    Args:
-        pdf_path (str): Path to the PDF file
-        api_key (str, optional): Anthropic API key. If None, uses ANTHROPIC_API_KEY env var
-        max_tokens (int): Maximum tokens allowed (default 180k for safety)
-        verbose (bool): Print detailed information
-    
-    Returns:
-        tuple: (extracted_data_json_string, cost_in_dollars)
-        Returns (None, 0) if extraction fails
+    Upload document in chunks and build conversation history for final analysis
     """
+    reader = PdfReader(BytesIO(pdf_file))
+    total_pages = len(reader.pages)
     
-    #
+    if verbose:
+        print(f"📄 Starting extraction of {total_pages} pages in chunks of {chunk_size}")
     
+    # Initialize conversation history
+    conversation_messages = []
     
+    # Process each chunk
+    for start in range(0, total_pages, chunk_size):
+        writer = PdfWriter()
+        end = min(start + chunk_size, total_pages)
+        
+        # Create chunk
+        for i in range(start, end):
+            writer.add_page(reader.pages[i])
+            
+        # Save to temp file
+        temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+        writer.write(temp_file)
+        temp_file.close()
+        temp_file_path = temp_file.name
+        
+        try:
+            encoded = encode_pdf_to_base64(temp_file_path)
+            
+            # Add user message for this chunk
+            user_message = {
+                'role': 'user',
+                'content': [
+                    {
+                        "type": "text",
+                        "text": f"I'm uploading a lease document in chunks for analysis. Here are pages {start+1} through {end} (chunk {start//chunk_size + 1} of {(total_pages-1)//chunk_size + 1}). Please acknowledge receipt and note any key information you see."
+                    },
+                    {
+                        "type": "document",
+                        "source": {
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": encoded
+                        }
+                    }
+                ]
+            }
+            
+            conversation_messages.append(user_message)
+            
+            # Make API call with current conversation
+            response = claude_client.messages.create(
+                model='claude-3-5-sonnet-20241022',
+                max_tokens=1024,
+                messages=conversation_messages
+            )
+            
+            # Add Claude's response to conversation
+            assistant_message = {
+                'role': 'assistant',
+                'content': response.content[0].text
+            }
+            conversation_messages.append(assistant_message)
+            
+            if verbose:
+                print(f"✅ Processed chunk {start//chunk_size + 1}: pages {start+1}-{end}")
+                print(f"   Claude response: {response.content[0].text[:100]}...")
+            
+            # Rate limiting - wait between chunks (except for last chunk)
+            if end < total_pages:
+                if verbose:
+                    print("⏳ Waiting 30 seconds for rate limit...")
+                time.sleep(30)
+                
+        finally:
+            os.remove(temp_file_path)
+    
+    if verbose:
+        print("📝 All chunks uploaded. Conversation history built.")
+    
+    return conversation_messages
+
+def claude_extraction(pdf, claude_client, supabase_client, max_tokens=1000000, verbose=False):
+    """
+    Extract lease information from PDF using Claude API with conversation history approach
+    """
     try:
         # Get current date for context
         now = datetime.now().strftime("%Y/%m/%d")
         start_time = datetime.now()
         
-        # Encode the PDF
-        pdf_base64 = encode_pdf_to_base64(pdf_path)
+        # Upload document in chunks and build conversation
+        conversation_messages = document_upload_with_conversation(
+            pdf, supabase_client, claude_client, chunk_size=15, verbose=verbose
+        )
+        
         if verbose:
-            print("✅ PDF encoded successfully")
+            print("✅ PDF processed in chunks, building final analysis request")
         
         # Define the extraction prompt
-        prompt = """Read this lease and tell me:
+        extraction_prompt = """Now that you have seen all chunks of this lease document, please analyze the complete document and extract the following information:
 
 Do calculations as necessary
 -lease_execution_date (The Day the lease takes affect (Often handwritten))
@@ -119,50 +211,23 @@ Do calculations as necessary
 
 Please respond with a valid JSON object only."""
 
-        system_message = f"""You are a leasing document analyzer. Respond only with a JSON object containing all the requested fields. If information is not available in the document, omit that field. Do not add JSON Keys that are not in the user message. It is uploading to a database with these specfic column names and will break if they are changed or additional columns are added. Perform calculations as needed and format dates as yyyy/mm/dd. For Current or Base Rent, CAM etc. 
+        system_message = f"""You are a leasing document analyzer. You have now seen all chunks of a lease document. Respond only with a JSON object containing all the requested fields. If information is not available in the document, omit that field. Do not add JSON Keys that are not in the user message. It is uploading to a database with these specific column names and will break if they are changed or additional columns are added. Perform calculations as needed and format dates as yyyy/mm/dd. For Current or Base Rent, CAM etc. 
 When extracting cost-related fields (such as rent, CAM charges, or other expenses), use the current date: {now} to determine relevance. example ie if base_monthly_rent starts at $1679 but from 2/1/24-1/31/2025 it should 1782. And we are within that date range use that. If that is the last date range available, because the lease expired or another reason, use that"""
 
-        # Estimate tokens before API call
-        token_info = estimate_total_tokens(prompt, pdf_base64, system_message)
+        # Add final extraction request to conversation
+        final_user_message = {
+            'role': 'user',
+            'content': extraction_prompt
+        }
+        conversation_messages.append(final_user_message)
         
-        if verbose:
-            print(f"📊 Token estimation:")
-            print(f"  Prompt: {token_info['prompt_tokens']:,}")
-            print(f"  System: {token_info['system_tokens']:,}")
-            print(f"  Document: {token_info['document_tokens']:,}")
-            print(f"  Total: {token_info['total_estimated']:,}")
-        
-        # Check token limit
-        if token_info['total_estimated'] > max_tokens:
-            if verbose:
-                print(f"❌ Token limit exceeded: {token_info['total_estimated']:,} > {max_tokens:,}")
-            return None, 0
-        
-        # Make API call
+        # Make final API call for extraction
         response = claude_client.messages.create(
             model="claude-3-5-sonnet-20241022",
             max_tokens=4000,
             temperature=0,
             system=system_message,
-            messages=[
-                {
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": prompt
-                        },
-                        {
-                            "type": "document",
-                            "source": {
-                                "type": "base64",
-                                "media_type": "application/pdf",
-                                "data": pdf_base64
-                            }
-                        }
-                    ]
-                }
-            ],
+            messages=conversation_messages
         )
         
         # Calculate cost
@@ -170,14 +235,24 @@ When extracting cost-related fields (such as rent, CAM charges, or other expense
         output_tokens = response.usage.output_tokens
         cost = (input_tokens * 0.003 / 1000) + (output_tokens * 0.015 / 1000)
         
+        ALLOWED_KEYS = get_lease_column_names(supabase_client)
+        
         # Get extracted data
         extracted_data = response.content[0].text
         
         try: 
             extracted_dict = json.loads(extracted_data)
+            final_dict = {}
+            for key, value in extracted_dict.items():
+                if key not in ALLOWED_KEYS:
+                    if verbose:
+                        print(f"Skipping unknown key: {key}")
+                    continue
+                final_dict[key] = value  # Fixed syntax error here
         except Exception as e:
             print("JSON parsing error in claude response", e)
             raise
+            
         if verbose:
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
@@ -187,10 +262,9 @@ When extracting cost-related fields (such as rent, CAM charges, or other expense
             print(f"  Cost: ${cost:.4f}")
             print(f"  Duration: {duration:.2f}s")
         
-        return extracted_dict, cost
+        return final_dict, cost
         
     except Exception as e:
         if verbose:
             print(f"❌ Error during extraction: {str(e)}")
         return None, 0
-
