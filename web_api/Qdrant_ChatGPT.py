@@ -26,7 +26,7 @@ def extract_json_from_response(response_text: str):
         print("Json parsing error:", e)
         return None
  #Gets data from vector db that was just uploaded for ChatGPT
-def get_relevant_chunks(collection_Name, q_client, filtertype1, filterid1, company_id, message, openAI, claude, oldData, supabase_client):
+def get_relevant_chunks(collection_Name, q_client, filtertype1, filterid1, company_id, message, openAI, claude, oldData, supabase_client, claude_model):
     print("get_relevant_chunks")
     now = datetime.now()
     prompt_tokens = 0
@@ -41,7 +41,7 @@ def get_relevant_chunks(collection_Name, q_client, filtertype1, filterid1, compa
     try:
         print("GPT rephrase question")
         message_summary = claude.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model=claude_model,
             system=(f"""
 You are preparing a search query for a vector database (Qdrant) to help retrieve the most relevant lease documents for answering a property management question.
 
@@ -179,7 +179,7 @@ Use this format exactly:
 
         print("Messaging ChatGPT")
         chat_response = claude.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model=claude_model,
             system=(systemprompt),
             messages=[
                 {"role": "user", "content": [

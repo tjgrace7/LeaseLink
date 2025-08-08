@@ -13,7 +13,7 @@ import os
 
 
 
-def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_name, company_id, collectionName, OpenAIclient, qdrant_client, supabase_client, job_id, job_status, claude_client):
+def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_name, company_id, collectionName, OpenAIclient, qdrant_client, supabase_client, job_id, job_status, claude_client, claude_model):
     load_dotenv()
     upload_session_id = str(uuid.uuid4())
     print(f"Upload_Session_id: {upload_session_id}")
@@ -25,7 +25,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
     try:
 
 
-        extracted_lease_data, total_cost = claude_extractor.claude_extraction(pdf_file, claude_client, supabase_client, verbose=True)
+        extracted_lease_data, total_cost = claude_extractor.claude_extraction(pdf_file, claude_client, supabase_client, claude_model, verbose=True)
 
 
         if isinstance(extracted_lease_data, str):

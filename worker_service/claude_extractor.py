@@ -48,7 +48,7 @@ def get_lease_column_names(supabase_client):
     except Exception as e:
         raise Exception(f"Supabase RPC failed: {e}")
 
-def document_upload_with_conversation(pdf_file, claude_client, chunk_size=15, verbose=False):
+def document_upload_with_conversation(pdf_file, claude_client, claude_model, chunk_size=15, verbose=False):
     """
     Upload document in chunks and build conversation history for final analysis
     """
@@ -103,7 +103,7 @@ def document_upload_with_conversation(pdf_file, claude_client, chunk_size=15, ve
             
             # Make API call with current conversation
             response = claude_client.messages.create(
-                model='claude-3-5-sonnet-20241022',
+                model=claude_model,
                 max_tokens=1024,
                 messages=conversation_messages
             )
@@ -145,7 +145,7 @@ def document_upload_with_conversation(pdf_file, claude_client, chunk_size=15, ve
     
     return conversation_messages
 
-def claude_extraction(pdf, claude_client, supabase_client, verbose=False):
+def claude_extraction(pdf, claude_client, supabase_client, claude_model, verbose=False):
     """
     Extract lease information from PDF using Claude API with conversation history approach
     """
@@ -236,7 +236,7 @@ When extracting cost-related fields (such as rent, CAM charges, or other expense
         
         # Make final API call for extraction
         response = claude_client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model=claude_model,
             max_tokens=4000,
             temperature=0,
             system=system_message,

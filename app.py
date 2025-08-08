@@ -22,7 +22,7 @@ from anthropic import Anthropic
 
 
 app = FastAPI()
-
+claude_model = 'claude-3-5-haiku-20240626'
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://www.leaselink.ai", 'http://localhost:5173'],  # 👈 Add your local dev URL
@@ -125,7 +125,8 @@ def export_lease(job_id, lease_request):
             supabase_client,
             job_id,
             job_status[job_id],
-            claude_client
+            claude_client,
+            claude_model
         )
 
     except Exception as e:
@@ -164,7 +165,7 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
 
         final_message, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data = Qdrant_ChatGPT.get_relevant_chunks(
             collectionName, qdrant_client, filtertype, entity_id, company_id,
-            message, OpenAIclient, claude_client,oldmessages, supabase_client
+            message, OpenAIclient, claude_client,oldmessages, supabase_client, claude_model
         )
 
         if final_message:
