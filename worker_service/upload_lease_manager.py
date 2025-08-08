@@ -28,7 +28,7 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
         total_pages = len(reader.pages)
         print("starting extraction")
 
-        chunk_size=10
+        chunk_size=8
         combined_extracted_data = {}
         for start in range(0, total_pages, chunk_size):
             writer = PdfWriter()
@@ -50,6 +50,11 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
                     combined_extracted_data[key] = value
                 elif not is_real_value(existing) and is_real_value(value):
                     combined_extracted_data[key] = value
+                elif is_real_value(existing) and is_real_value(value):
+                    if not isinstance(existing, list):
+                        combined_extracted_data[key] = [existing]
+                    if value not in combined_extracted_data[key]:
+                        combined_extracted_data[key].append(value)
             total_cost += cost
             if(total_pages > chunk_size):
                 time.sleep(30)
