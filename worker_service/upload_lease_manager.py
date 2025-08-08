@@ -14,12 +14,13 @@ import os
 def is_real_value(val):
     return val and str(val).strip().lower() != 'n/a'
 
-def get_table_column_names(supabase_client, table_name: str) -> set:
-    response = supabase_client.rpc('get_lease_column_names').execute()
 
-    if response.error:
-        raise Exception(f"Failed to fetch columns: {response.error.message}")
+def get_lease_column_names(supabase_client):
+    response = supabase_client.rpc("get_lease_column_names").execute()
 
+    if not response.data or response.status_code >= 400:
+        raise Exception(f"Supabase RPC failed: {response.status_code} {response.data}")
+    
     return {row['column_name'] for row in response.data}
 
 def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_name, company_id, collectionName, OpenAIclient, qdrant_client, supabase_client, job_id, job_status, claude_client):
