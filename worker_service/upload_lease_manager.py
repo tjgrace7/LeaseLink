@@ -14,6 +14,21 @@ import os
 def is_real_value(val):
     return val and str(val).strip().lower() != 'n/a'
 
+def get_table_column_names(supabase_client, table_name: str) -> set:
+    response = supabase_client.rpc("execute_sql", {
+        "sql": f"""
+            SELECT column_name
+            FROM information_schema.columns
+            WHERE table_name = '{table_name}'
+              AND table_schema = 'public'
+        """
+    }).execute()
+
+    if response.error:
+        raise Exception(f"Failed to fetch columns: {response.error.message}")
+
+    return {row['column_name'] for row in response.data}
+
 def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_name, company_id, collectionName, OpenAIclient, qdrant_client, supabase_client, job_id, job_status, claude_client):
     load_dotenv()
     upload_session_id = str(uuid.uuid4())
@@ -42,8 +57,13 @@ def load_pdf(auth_id, propertyid, unit_id, tenantid, get_pdf, lease_id, bucket_n
             temp_file_path = temp_file.name
 
             extracted_lease, cost = claude_extractor.claude_extraction(temp_file_path, claude_client, verbose=True)
+            ALLOWED_KEYS = get_table_column_names(supabase_client, 'lease_documents')
             print("Lease Extracted", extracted_lease)
             for key, value in extracted_lease.items():
+
+                if key not in ALLOWED_KEYS:
+                    print(f"Skipping unknown key: {key}")
+                    continue
                 existing = combined_extracted_data.get(key)
 
                 if key not in combined_extracted_data:
