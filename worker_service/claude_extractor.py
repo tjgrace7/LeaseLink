@@ -37,7 +37,7 @@ def make_api_call_with_retry(claude_client, claude_model, conversation_messages,
     """
     base_delay = 60
     now = datetime.now()
-    system_message = f"""You are a leasing document analyzer. Respond only with a JSON object containing all the requested fields. If information is not available, omit that field. Use exact keys from the prompt. Format all dates as yyyy/mm/dd.  Use the current date {now} to determine relevant rent or cost values."""
+    system_message = f"""You are a leasing document analyzer. Respond only with a JSON object containing all the requested fields. If information is not available, omit that field. Use exact keys from the prompt. Format all dates as yyyy/mm/dd. if line uses word date. Do not add anything that is not yyyy/mm/dd  Use the current date {now} to determine relevant rent or cost values."""
     for attempt in range(max_retries):
         try:
             response = claude_client.messages.create(
