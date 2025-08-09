@@ -86,7 +86,7 @@ def merge_extraction_results(results_list):
     for result in results_list:
         if not result:
             continue
-
+        print(result.items())
         for key, value in result.items():
             # Skip if key looks like a date field but value is not formatted correctly
             if "date" in key.lower():
@@ -118,7 +118,7 @@ def claude_extraction(pdf, claude_client, supabase_client, claude_model, verbose
 
         extraction_prompt = """Now that you have seen this lease document chunk, please extract the following information. Do calculations as necessary. Respond only with a valid JSON object using these keys. Omit fields that aren't found:
 
--lease_execution_date (The Day the lease takes affect (Often handwritten))
+-lease_execution_date (The Day the document is signed (Often handwritten))
 -base_rent_monthly (Price of rent per month for the building before expenses. )
 -rent_escalation (Give details on the rent schedule during the initial lease. List by date and amount.) 
 -security_deposit_amount (The amount the rent has to put as a "down payment" to hold there space. Is paid back at the end of the lease if the property is left in good condition.) 
@@ -131,7 +131,7 @@ def claude_extraction(pdf, claude_client, supabase_client, claude_model, verbose
 -CAM_Summary (Make note of any operating expenses not allowed to be charged back to the tenant.) 
 -tenant_reimbursements (A summary of the system in which the landlord is able to bill the tenant for expenses they initially paid for or the rights in which the tenants have to recoup the money in which they overpaid for building expenses.) 
 -insurance_requirements (Insurance requirements for the renters of the space. (General or more probably liability)) 
--lease_commencement_date (The Day the Lease takes effect, yyyy/mm/dd force into format) 
+-lease_commencement_date (The Day the Lease takes effect, and terms start. yyyy/mm/dd force into format) 
 -lease_expiration_date (Day that the lease ends before any options to renew. Use the formula lease commencement date + term if required. Use yyyy/mm/dd force into format) 
 -delivery_possession_date (The day the tenants may access the space, yyyy/mm/dd) 
 -CAM_start_date (The date in which the tenant is responsible for paying estimated CAM amounts, yyyy/mm/dd force into format) 
