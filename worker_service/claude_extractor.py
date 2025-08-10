@@ -94,6 +94,7 @@ def merge_extraction_results(results_list):
                     continue  # ❌ Skip this key-value entirely
 
             if key == 'renewal_intent_notice':
+                print(value)
                 key = 'option_exercise_deadlines'
             if key in merged:
                 existing_value = str(merged[key]).strip()
