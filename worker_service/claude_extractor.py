@@ -140,7 +140,7 @@ def claude_extraction(pdf, claude_client, supabase_client, claude_model, verbose
 -Property_Address (The listed address of the property) 
 -suite_identifier (The number or letter of the suite without the address if applicable) 
 -lease_term (Length of lease term in months)
--option_exercise_deadlines (When shall the option be exercised?) 
+-option_exercise_deadlines (How does the tenant exercise their option to renew) 
 -renewal_options (The amount of options the tenant has and the terms that change upon the commencement of these options.)
 -termination_rights (Any terms that allow either party to terminate the lease early.
 -expansion_contraction_rights (The provisions that allow the tenant to grow into more space or shrink out of other space.) 
