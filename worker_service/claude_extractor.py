@@ -93,9 +93,7 @@ def merge_extraction_results(results_list):
                 if not isinstance(value, str) or not date_pattern.match(value.strip()):
                     continue  # ❌ Skip this key-value entirely
 
-            if key == 'renewal_intent_notice':
-                print(value)
-                key = 'option_exercise_deadlines'
+            
             if key in merged:
                 existing_value = str(merged[key]).strip()
                 new_value = str(value).strip()
@@ -143,7 +141,7 @@ def claude_extraction(pdf, claude_client, supabase_client, claude_model, verbose
 -Property_Address (The listed address of the property) 
 -suite_identifier (The number or letter of the suite without the address if applicable) 
 -lease_term (Length of lease term in months)
--renewal_intent_notice (When does the tenant notify the landlord of their intent to renew) 
+-option_exercise_deadlines (When does the tenant notify the landlord of their intent to renew) 
 -renewal_options (The amount of options the tenant has and the terms that change upon the commencement of these options.)
 -termination_rights (Any terms that allow either party to terminate the lease early.
 -expansion_contraction_rights (The provisions that allow the tenant to grow into more space or shrink out of other space.) 

@@ -22,7 +22,7 @@ from anthropic import Anthropic
 
 
 app = FastAPI()
-claude_model = 'claude-3-5-sonnet-20241022'
+claude_model = 'claude-sonnet-4-20250514'
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["https://www.leaselink.ai", 'http://localhost:5173'],  # 👈 Add your local dev URL
@@ -33,7 +33,7 @@ app.add_middleware(
 job_status = {}
 load_dotenv()
 EDGE_SECRET = os.getenv("PYTHON_EDGE_SECRET")
-collectionName = "Test-Leases"
+collectionName = "Lease_Link_Project"
 supabase_url = os.getenv("SUPABASE_URL")
 JWKS_URL = f"{supabase_url}/auth/v1/keys"
 SUPABASE_JWT = os.getenv("SUPABASE_JWT")
