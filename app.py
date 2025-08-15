@@ -33,7 +33,7 @@ app.add_middleware(
 job_status = {}
 load_dotenv()
 EDGE_SECRET = os.getenv("PYTHON_EDGE_SECRET")
-collectionName = "Lease_Link_Project"
+collectionName = "Lease_Link"
 supabase_url = os.getenv("SUPABASE_URL")
 JWKS_URL = f"{supabase_url}/auth/v1/keys"
 SUPABASE_JWT = os.getenv("SUPABASE_JWT")
