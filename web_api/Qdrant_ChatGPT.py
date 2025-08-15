@@ -1,4 +1,5 @@
 from qdrant_client.http.models import  Filter, FieldCondition, MatchValue
+from qdrant_client.http import models as rest
 import json
 from dotenv import load_dotenv
 from datetime import datetime
@@ -88,12 +89,12 @@ Return a **single, semantically precise** version of the user's question that wi
 
         print("Encode question for pricing")
         encoding = tiktoken.encoding_for_model("text-embedding-3-large")
-        embedding_token_count = len(encoding.encode(input))
+        embedding_token_count = encoding.encode(message_vector)
 
         print("Qdrant Search")
         results = q_client.search(
             collection_name=collection_Name,
-            query_vector=message_vector,
+            query_vector=rest.NamedVector(name='dense', vector=message_vector),
             limit=20,
             with_payload=True,
             with_vectors=False,

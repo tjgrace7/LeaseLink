@@ -25,7 +25,7 @@ def EmbedFiles(client, chunk, tenantid, propertymanagerid, propertyid,unitid, up
         print("Error Embedding Files", e)
     return PointStruct(
         id=str(uuid4()),
-        vector = vector,
+        vector = {"dense": vector},
         payload={
             "tenantid": tenantid,
             "propertymanagerid": propertymanagerid,
