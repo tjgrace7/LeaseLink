@@ -17,7 +17,8 @@ def EmbedFiles(client, chunk, tenantid, propertymanagerid, propertyid,unitid, up
             model="text-embedding-3-large"
         )
         encoding = tiktoken.encoding_for_model('text-embedding-3-large')
-        embedding_cost = len(encoding.encode(chunk)) * .00000013
+        token_count = len(encoding.encode(chunk))
+        embedding_cost = (token_count * 0.00000013) if token_count else 0.0
         #Gets embedded vector from openai
         vector = response.data[0].embedding
         #prepares payload for vector db

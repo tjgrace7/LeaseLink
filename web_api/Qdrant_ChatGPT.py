@@ -13,14 +13,18 @@ from memory_profiler import profile
 
 
 @profile
-def extract_json_from_response(response_text: str):
-    #Find everything between ```json and ```
+def extract_json_from_response(response_text):
+    # Ensure string
+    if not isinstance(response_text, str):
+        try:
+            response_text = str(response_text)
+        except Exception:
+            return None
+
     match = re.search(r"```json\s*(.*?)\s*```", response_text, re.DOTALL)
     if not match:
         return None
-    
     json_str = match.group(1)
-
     try:
         return json.loads(json_str)
     except json.JSONDecodeError as e:
@@ -89,7 +93,7 @@ Return a **single, semantically precise** version of the user's question that wi
 
         print("Encode question for pricing")
         encoding = tiktoken.encoding_for_model("text-embedding-3-large")
-        embedding_token_count = encoding.encode(message_vector)
+        embedding_token_count = len(encoding.encode(input))
 
         print("Qdrant Search")
         results = q_client.search(
