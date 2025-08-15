@@ -17,17 +17,54 @@ def encode_pdf_to_base64(file_path):
 
 # --- JSON extraction helpers ---
 JSON_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.DOTALL)
-FIRST_JSON_OBJ_RE = re.compile(r"\{(?:[^{}]|(?R))*\}", re.DOTALL)
+
+def _first_balanced_json_object(s: str) -> str | None:
+    """Return the first balanced {...} substring, ignoring braces inside strings."""
+    start = s.find("{")
+    if start == -1:
+        return None
+
+    in_str = False
+    esc = False
+    depth = 0
+    i = start
+    while i < len(s):
+        ch = s[i]
+
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+        else:
+            if ch == '"':
+                in_str = True
+            elif ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+                if depth == 0:
+                    return s[start:i+1]
+        i += 1
+    return None  # no balanced object found
 
 def extract_json_from_text(text: str) -> dict:
     cleaned = JSON_FENCE_RE.sub("", text.strip())
+    # First try: entire string is JSON
     try:
         return json.loads(cleaned)
     except Exception:
-        m = FIRST_JSON_OBJ_RE.search(cleaned)
-        if not m:
-            return json.loads(text)
-        return json.loads(m.group(0))
+        pass
+
+    # Second try: find the first balanced {...} block
+    candidate = _first_balanced_json_object(cleaned)
+    if candidate:
+        return json.loads(candidate)
+
+    # Last resort: maybe caller passed raw JSON after trimming fences incorrectly
+    return json.loads(text)
 
 # --- Value filters ---
 def is_real_value(val):
