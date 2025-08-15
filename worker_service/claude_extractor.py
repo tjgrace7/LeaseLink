@@ -190,21 +190,23 @@ Please respond with a valid JSON object only."""
 
             try:
                 encoded = encode_pdf_to_base64(temp_path)
+                
 
                 messages = [{
-                    'role': 'user',
-                    'content': [
-                        { "type": "text", "text": extraction_prompt },
+                    "role": "user",
+                    "content": [
                         {
                             "type": "document",
                             "source": {
-                                "type": "base64",
-                                "media_type": "application/pdf",
-                                "data": encoded
+                            "type": "base64",
+                            "media_type": "application/pdf",
+                            "data": encoded
                             }
-                        }
+                        },
+                        { "type": "text", "text": extraction_prompt }
                     ]
                 }]
+
 
                 if verbose:
                     print(f"📄 Sending pages {start+1}-{end} to Claude")
@@ -212,6 +214,7 @@ Please respond with a valid JSON object only."""
                 response = make_api_call_with_retry(
                     claude_client, claude_model, messages, verbose
                 )
+                print(response)
                 token_count = response.usage.input_tokens
                 output_tokens = response.usage.output_tokens
                 total_cost = 0.0
@@ -235,6 +238,7 @@ Please respond with a valid JSON object only."""
                         if key in ALLOWED_KEYS and is_real_value(value)
                     }
                     all_results.append(cleaned)
+                    print(all_results)
                     if verbose:
                         print(f"✅ Parsed chunk {start//chunk_size + 1} successfully")
                 except Exception as e:
@@ -249,7 +253,7 @@ Please respond with a valid JSON object only."""
                 time.sleep(15)
 
         final_result = merge_extraction_results(all_results)
-
+        print(final_result)
         if verbose:
             end_time = datetime.now()
             duration = (end_time - start_time).total_seconds()
