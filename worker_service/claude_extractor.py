@@ -212,6 +212,19 @@ Please respond with a valid JSON object only."""
                 response = make_api_call_with_retry(
                     claude_client, claude_model, messages, verbose
                 )
+                token_count = response.usage.input_tokens
+                output_tokens = response.usage.output_tokens
+                total_cost = 0.0
+                input_cost = 0.0
+                output_cost = 0.0
+                if token_count > 200000:
+                    input_cost = .000006
+                    output_cost = .0000225
+                else:
+                    input_cost = 0.000003
+                    output_cost = 0.000015
+                
+                total_cost = token_count*input_cost+output_tokens*output_cost
 
                 raw_text = response.content[0].text
                 try:
@@ -245,7 +258,7 @@ Please respond with a valid JSON object only."""
             print(f"🧩 Final extracted fields: {len(final_result)}")
             print(f"⏱️ Duration: {duration:.2f} seconds")
 
-        return final_result, 0, total_pages  # cost not calculated here
+        return final_result, total_cost, total_pages  # cost not calculated here
 
     except Exception as e:
         if verbose:
