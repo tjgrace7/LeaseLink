@@ -1,88 +1,129 @@
 import gc
-from pdf2image import convert_from_bytes 
+from pdf2image import convert_from_bytes
 from pytesseract import image_to_string
 import re
 from . import embed_files
-from concurrent.futures import ThreadPoolExecutor
-import psutil, os
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing as mp
+import psutil
 from io import BytesIO
 from PyPDF2 import PdfReader, PdfWriter
 import time
-from memory_profiler import profile
 from common.cleanup_utils import Clear_Uploads
 from datetime import datetime
+import os
+from openai import OpenAI  # used inside child
+import threading
 
+# --------------------- corrections & helpers (unchanged) ---------------------
 corrections = {
-    "Shail":"Shall",
+    "Shail": "Shall",
     "/f": "If",
     "Ali": "All",
     "Aritrate": "Arbitrate",
     "Rightof": "Right of",
-    "/n" : "In",
+    "/n": "In",
     "Settie": "Settle",
-    "(FF &E)": '("FF&E")',
+    '(FF &E)': '("FF&E")',
     "Governmental!": "Governmental",
     "equipment-landiord": "equipment-landlord",
-    "1°!" : "1st",
-    "7," : "7.",
-    "Fhis" : "This",
-    "Titie" : "Title"
+    "1°!": "1st",
+    "7,": "7.",
+    "Fhis": "This",
+    "Titie": "Title",
 }
-#Takes list of corrections and changes errors into what they should be
+
 def apply_corrections(text):
     for wrong, correct in corrections.items():
         text = text.replace(wrong, correct)
     return text
 
-#cleans tesseract text to get rid of useless characters and extra line spaces
 def is_gibberish(line):
     line = line.strip()
-    
-    #preserve Table of Contents entries (even without dot leaders)
-    if re.match(r'^\d{1,2}(\.\d+)?\s+[A-Z].+', line):
-        return False
-    #If the entry contains the word "Exhibit" followed by 1 letter, it is not gibberish
-    if re.match(r'^Exhibit\s+"?[A-Z]"?', line, re.IGNORECASE):
-        return False
-    #If the line has an uppercase character followed by uppercase letter, space, -, &, or ,. It is not gibberish
-    if re.match(r'^[A-Z][A-Z\s\-&,]+\d{1,3}', line, re.IGNORECASE):
-        return False
-    #if the line has 5 or more periods in a row it is gibberish
-    if re.search(r'(.)\1{5,}', line):
-        return True
-    #if the number of unique characters is less than 5 while the number of total characters is greater than 40 it is probably gibberish
-    if len(set(line)) < 5 and len(line) > 40:
-        return True
-    #Gets the number of words in 1 line
+    if re.match(r'^\d{1,2}(\.\d+)?\s+[A-Z].+', line): return False
+    if re.match(r'^Exhibit\s+"?[A-Z]"?', line, re.IGNORECASE): return False
+    if re.match(r'^[A-Z][A-Z\s\-&,]+\d{1,3}', line, re.IGNORECASE): return False
+    if re.search(r'(.)\1{5,}', line): return True
+    if len(set(line)) < 5 and len(line) > 40: return True
     word_count = len(re.findall(r'\b\w+\b', line))
-    #if the number of characters or lines is > 100 and the number of words is less than 3. It is gibberish
-    if len(line) > 100 and word_count < 3:
-            return True
-    #Gets the percentage of symbols compared to the number of characters + 1
+    if len(line) > 100 and word_count < 3: return True
     symbol_ratio = len(re.findall(r'\W', line)) / (len(line) + 1)
-    #if the number of words is less than 2 and the symbol ration is greater than .6 and the number of characters is greater than 30. It is gibberish
-    if word_count <2 and symbol_ratio >.6 and len(line) >30:
-        return True
+    if word_count < 2 and symbol_ratio > .6 and len(line) > 30: return True
     return False
 
 EMBEDDING_CLASSES = {
-    'financial': ['base rent monthly', 'rent escalation', 'security deposit', 'rent', 'operating expenses', 'CAM', 'tenant', 'insurance', 'start_date', 'common area maintenance', 'tenant_reimbursements', 'insurance', 'delivery possession date', 'rent abatement', 'rent commencement'],
-    'term': ['address', 'suite', 'term', 'length', 'month', 'renewal', 'renewal notice', 'termination_rights', 'expansion rights', 'shrinkage rights', 'contraction rights', 'co tenancy', 'purchase options', 'square footage', 'rentable square footage', 'premises', 'parking', 'storage', 'maintenance', 'hvac', 'utility', 'default', 'assignment', 'subletting', 'indemnity', 'force majeure', 'estoppel', 'signage', 'permitted use', 'exclusive_use', 'guarantor', 'tenant improvement', 'holdover terms', 'landlord work', 'tenant work', 'security deposit term', 'Right of First Refusal', 'ROFR', 'Right of First Offer', 'ROFO', 'security access', 'exclusivity']
-    }
+    "financial": [
+        "base rent monthly",
+        "rent escalation",
+        "security deposit",
+        "rent",
+        "operating expenses",
+        "cam",
+        "tenant",
+        "insurance",
+        "start_date",
+        "common area maintenance",
+        "tenant_reimbursements",
+        "delivery possession date",
+        "rent abatement",
+        "rent commencement",
+    ],
+    "term": [
+        "address",
+        "suite",
+        "term",
+        "length",
+        "month",
+        "renewal",
+        "renewal notice",
+        "termination_rights",
+        "expansion rights",
+        "shrinkage rights",
+        "contraction rights",
+        "co tenancy",
+        "purchase options",
+        "square footage",
+        "rentable square footage",
+        "premises",
+        "parking",
+        "storage",
+        "maintenance",
+        "hvac",
+        "utility",
+        "default",
+        "assignment",
+        "subletting",
+        "indemnity",
+        "force majeure",
+        "estoppel",
+        "signage",
+        "permitted use",
+        "exclusive_use",
+        "guarantor",
+        "tenant improvement",
+        "holdover terms",
+        "landlord work",
+        "tenant work",
+        "security deposit term",
+        "right of first refusal",
+        "rofr",
+        "right of first offer",
+        "rofo",
+        "security access",
+        "exclusivity",
+    ],
+}
 
 def classify_chunk(text):
     text_lower = text.lower()
     for label, keywords in EMBEDDING_CLASSES.items():
         if any(k in text_lower for k in keywords):
             return label
-    return 'general'
+    return "general"
 
-
+section_regex = re.compile(r'^\d+(\.\d+)?\s+[A-Z \-]+:?')
 
 def chunk(text):
-
-    section_regex = re.compile(r'^\d+(\.\d+)?\s+[A-Z \-]+:?')
-    
     lines = text.splitlines()
     chunks = []
     current_chunk = []
@@ -99,64 +140,80 @@ def chunk(text):
                 current_chunk.append(stripped)
         else:
             current_chunk.append(stripped)
-        del stripped
     if current_chunk:
         chunks.append("\n".join(current_chunk))
-    del current_chunk, lines, text
     end_time = datetime.now()
-    difference = end_time-start_time
-    print(f"Chunking time: {difference.total_seconds():.3f} seconds")
+    print(f"Chunking time: {(end_time - start_time).total_seconds():.3f} seconds")
     return chunks
 
-# (Keep corrections, apply_corrections, is_gibberish, clean_ocr_text, and chunk as-is)
+# --------------------- child-process worker ---------------------
 
-def process_page(pdf, page_number, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, qdrant_client, job_id, bucket, file_path, collectionName, dry_run=False):
+def _make_openai_client(api_key: str):
+    return OpenAI(api_key=api_key)
+
+def process_page(
+    pdf: bytes,
+    page_number: int,
+    openai_api_key: str,
+    tenantid: str,
+    propertymanagerid: str,
+    propertyid: str,
+    unit_id: str,
+    upload_session_id: str,
+    source_doc_name: str,
+    company_id: str,
+):
+    """
+    Runs in a child process:
+      - Extract page
+      - Try text-layer extraction first; fall back to OCR
+      - Chunk + build serializable vector payloads using embed_files
+    Returns: (embedding_cost: float, points: list[dict])
+             where each point is {"id": str, "vector": list[float], "payload": dict}
+    """
     try:
-        memory_max = 1000
-        # Extract only this page from the PDF
+        tname = threading.current_thread().name  # mostly "MainThread" in subprocess
+        print(f"[pid={os.getpid()}] start page {page_number+1}")
+
+        # Extract a single page PDF as bytes
         reader = PdfReader(BytesIO(pdf))
-        writer = PdfWriter()
-        writer.add_page(reader.pages[page_number])
-        single_page_pdf = BytesIO()
-        writer.write(single_page_pdf)
+        page = reader.pages[page_number]
+        text_layer = page.extract_text() or ""
+        del reader
 
-        # Convert just this page to an image
-        image = convert_from_bytes(single_page_pdf.getvalue(), dpi=300)[0]  # ✅ Lower DPI for speed + memory
+        if text_layer.strip():
+            # Use the text layer—much faster than OCR
+            page_text = text_layer
+        else:
+            # Fall back to OCR
+            writer = PdfWriter()
+            writer.add_page(page)
+            single_page_pdf = BytesIO()
+            writer.write(single_page_pdf)
+            del writer, page
 
-        # Convert to grayscale and binarize
-       # gray = image.convert("L")
-        #binary = gray.point(lambda x: 0 if x < 180 else 255, '1')
+            # Slightly reduced DPI to balance speed and quality
+            image = convert_from_bytes(single_page_pdf.getvalue(), dpi=250)[0]
+            del single_page_pdf
 
-        # OCR
-        text = image_to_string(image, config='--psm 6')
-        chunks = chunk(text)
+            page_text = image_to_string(image, config="--psm 6")
+            image.close()
+            del image
 
+        chunks = chunk(page_text)
+        del page_text
 
-        print(f"Processed page {page_number + 1}")
-        mem_mb = psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2
-        print('Memory (MB):', mem_mb)
+        client = _make_openai_client(openai_api_key)
 
-        if mem_mb > 3500:
-            print("High Memory detected. Slowing Down")
-            time.sleep(3)
-        if mem_mb > 3750:
-            print("High Memory Detected > 3750mb. Slowing Down Further")
-            time.sleep(30)
-            
-        if mem_mb > memory_max:
-            Clear_Uploads(job_id, bucket, file_path)
+        points = []
+        embedding_cost = 0.0
 
-        vectors = []
-        embedding_cost = 0
         for chunk_index, chunk_text in enumerate(chunks):
-            if not isinstance(chunk_text, str) or not chunk_text.strip():
-                print(f"Skipping empty chunk at page {page_number + 1}, chunk {chunk_index}")
-                continue
-            if dry_run:
-                print(f"[Dry Run] Page {page_number+1} - Chunk {chunk_index}: {chunk_text[:80]}...\n")
+            if not (isinstance(chunk_text, str) and chunk_text.strip()):
                 continue
             chunk_class = classify_chunk(chunk_text)
-            print(chunk_class)
+
+            # Let embed_files create something like a PointStruct; convert to dict for pickling
             vector_data, embeddingcost = embed_files.EmbedFiles(
                 client,
                 chunk_text,
@@ -165,49 +222,89 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
                 propertyid,
                 unit_id,
                 upload_session_id,
-                page_number + 1,  # Display page as 1-based
+                page_number + 1,
                 source_doc_name,
                 chunk_index,
                 company_id,
-                chunk_class
+                chunk_class,
             )
-            vectors.append(vector_data)
-            embedding_cost += embeddingcost
-            del vector_data
-            print(len(vectors))
-            #Uploades Vectors into qdrant once 10 or more are active
+            embedding_cost += float(embeddingcost or 0.0)
 
-        image.close()
-        del image#, gray, binary
+            # Convert PointStruct -> serializable dict (id, vector, payload)
+            # Handle both dict-like and object-like returns
+            if isinstance(vector_data, dict):
+                pt = {
+                    "id": str(vector_data.get("id")),
+                    "vector": list(vector_data.get("vector") or []),
+                    "payload": dict(vector_data.get("payload") or {}),
+                }
+            else:
+                # object with attrs
+                pt = {
+                    "id": str(getattr(vector_data, "id")),
+                    "vector": list(getattr(vector_data, "vector")),
+                    "payload": dict(getattr(vector_data, "payload")),
+                }
+            points.append(pt)
+
+            # Free per-chunk memory
+            del vector_data
+
         gc.collect()
-        if vectors:
-            print("Uploading to Qdrant")
-            qdrant_client.upsert(collection_name=collectionName, points=vectors)
-            vectors.clear()
-            gc.collect()
-            
-        return embedding_cost
+        print(f"[pid={os.getpid()}] done page {page_number+1} (points={len(points)})")
+        return embedding_cost, points
+
     except Exception as e:
         print(f"Error processing page {page_number + 1}: {e}")
-        return []
+        return 0.0, []
 
-def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, unit_id, upload_session_id, source_doc_name, company_id, job_id, bucket, file_path, qdrant_client, job_status, collectionName, total_pages):
+# --------------------- parent-side orchestrator ---------------------
+
+def extract_text_from_pdf(
+    pdf: bytes,
+    openai_api_key: str,
+    tenantid: str,
+    propertymanagerid: str,
+    propertyid: str,
+    unit_id: str,
+    upload_session_id: str,
+    source_doc_name: str,
+    company_id: str,
+    job_id: str,
+    bucket: str,
+    file_path: str,
+    qdrant_client,  # parent-only client
+    job_status: dict,
+    collectionName: str,
+    total_pages: int,
+):
+    """
+    Parent process:
+      - spawns a process pool (spawn)
+      - collects (cost, points) from children
+      - batches Qdrant upserts
+    """
     total_embedding_cost = 0.0
+    batched_points = []
+    batch_size = int(os.getenv("QDRANT_UPSERT_BATCH", "200"))
+    workers = int(os.getenv("OCR_WORKERS", max(1, (os.cpu_count() or 2) - 1)))
 
+    print(f"Launching OCR with {workers} worker processes over {total_pages} pages")
 
-
-    #Runs each images converted from bytes on seperate thread for efficiency and speed
     try:
-        pagerunningCount = 0
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            pagerunningCount += 1
-            print("Page Running: ", pagerunningCount)
-            futures = [
-                executor.submit(
+        try:
+            mp.set_start_method("spawn", force=True)
+        except RuntimeError:
+            pass
+
+        futures = []
+        with ProcessPoolExecutor(max_workers=workers) as pool:
+            for page_number in range(total_pages):
+                f = pool.submit(
                     process_page,
-                    pdf,  # Full byte stream
+                    pdf,
                     page_number,
-                    client,
+                    openai_api_key,
                     tenantid,
                     propertymanagerid,
                     propertyid,
@@ -215,27 +312,35 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
                     upload_session_id,
                     source_doc_name,
                     company_id,
-                    qdrant_client,
-                    job_id,
-                    bucket,
-                    file_path, 
-                    collectionName
                 )
-                for page_number in range(total_pages)
+                futures.append(f)
 
-            ]
-        for future in futures:
-            result = future.result()
+            for i, f in enumerate(as_completed(futures), 1):
+                try:
+                    cost, points = f.result()
+                    total_embedding_cost += float(cost or 0.0)
 
-            if result:
-                if isinstance(result, (int, float)):
-                    total_embedding_cost += result
+                    if points:
+                        batched_points.extend(points)
+                        if len(batched_points) >= batch_size:
+                            qdrant_client.upsert(collection_name=collectionName, points=batched_points)
+                            batched_points.clear()
+                            gc.collect()
+
+                    print(f"[{i}/{total_pages}] page done; running total cost: {total_embedding_cost:.4f}")
+
+                except Exception as e:
+                    print("Page task failed:", e)
+
+        # flush any remaining points
+        if batched_points:
+            qdrant_client.upsert(collection_name=collectionName, points=batched_points)
+            batched_points.clear()
 
         print("Image to Text success")
         return total_embedding_cost
+
     except Exception as e:
         print("Error Getting Vector. Deleting Files from supabase", e)
         Clear_Uploads(job_id, bucket, file_path, job_status)
-
-
-
+        return 0.0
