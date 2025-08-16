@@ -43,7 +43,7 @@ Claude = os.getenv("Claude_API_KEY")
 
 
 job_queue = Queue()
-MAX_WORKERS = 5
+MAX_WORKERS = 1
 
 def job_worker():
     while True:

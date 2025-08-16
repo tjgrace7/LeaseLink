@@ -136,12 +136,12 @@ def process_page(pdf, page_number, client, tenantid, propertymanagerid, property
         mem_mb = psutil.Process(os.getpid()).memory_info().rss / 1024 ** 2
         print('Memory (MB):', mem_mb)
 
-        if mem_mb > 850:
+        if mem_mb > 3500:
             print("High Memory detected. Slowing Down")
-            time.sleep(2)
-        if mem_mb > 1000:
-            print("High Memory Detected > 1000mb. Slowing Down Further")
-            time.sleep(5)
+            time.sleep(3)
+        if mem_mb > 3750:
+            print("High Memory Detected > 3750mb. Slowing Down Further")
+            time.sleep(30)
             
         if mem_mb > memory_max:
             Clear_Uploads(job_id, bucket, file_path)
@@ -198,7 +198,10 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
 
     #Runs each images converted from bytes on seperate thread for efficiency and speed
     try:
-        with ThreadPoolExecutor(max_workers=6) as executor:
+        pagerunningCount = 0
+        with ThreadPoolExecutor(max_workers=20) as executor:
+            pagerunningCount += 1
+            print("Page Running: ", pagerunningCount)
             futures = [
                 executor.submit(
                     process_page,
@@ -219,6 +222,7 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
                     collectionName
                 )
                 for page_number in range(total_pages)
+
             ]
         for future in futures:
             result = future.result()
