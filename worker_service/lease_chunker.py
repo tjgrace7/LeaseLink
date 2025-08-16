@@ -199,7 +199,7 @@ def extract_text_from_pdf(pdf, client, tenantid, propertymanagerid, propertyid, 
     #Runs each images converted from bytes on seperate thread for efficiency and speed
     try:
         pagerunningCount = 0
-        with ThreadPoolExecutor(max_workers=20) as executor:
+        with ThreadPoolExecutor(max_workers=10) as executor:
             pagerunningCount += 1
             print("Page Running: ", pagerunningCount)
             futures = [
