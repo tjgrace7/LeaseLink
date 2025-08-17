@@ -121,12 +121,11 @@ def export_lease(job_id, lease_request):
             collectionName,
             # pass only primitives; page workers will re-init their own clients from keys
             OPENAI_API_KEY,
-            os.getenv("QDRANT_URL"),
-            os.getenv("QDRANT_API_KEY"),
+            qdrant_client,
             supabase_client,  # safe to use only in parent process
             job_id,
             job_status[job_id],
-            CLAUDE_API_KEY,
+            claude_client,
             claude_model,
         )
 
