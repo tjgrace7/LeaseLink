@@ -39,7 +39,7 @@ def EmbedFiles(
         except Exception:
             token_count = 0
         embedding_cost = token_count * 0.00000013
-
+        
         # Build Qdrant point — vector MUST be a flat list, not {"dense": ...}
         point = PointStruct(
             id=str(uuid4()),

@@ -234,16 +234,16 @@ def process_page(
             # Handle both dict-like and object-like returns
             if isinstance(vector_data, dict):
                 pt = {
-                    "id": str(vector_data.get("id")),
-                    "vector": list(vector_data.get("vector") or []),
-                    "payload": dict(vector_data.get("payload") or {}),
+                    "id": vector_data.get("id"),
+                    "vector": vector_data.get("vector"),
+                    "payload": vector_data.get("payload"),
                 }
             else:
                 # object with attrs
                 pt = {
-                    "id": str(getattr(vector_data, "id")),
-                    "vector": list(getattr(vector_data, "vector")),
-                    "payload": dict(getattr(vector_data, "payload")),
+                    "id": getattr(vector_data, "id"),
+                    "vector": getattr(vector_data, "vector"),
+                    "payload": getattr(vector_data, "payload"),
                 }
             points.append(pt)
 

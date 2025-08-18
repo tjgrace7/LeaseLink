@@ -224,8 +224,35 @@ def cron_tick(x_cron_secret: str = Header(default="")):
     busy = (supabase_client.table("Upload_Job_Status").select('*').filter('job_info->>status', 'eq', 'processing').gte('updated_at', five_min_ago).execute())
     if(busy.count or 0) > 0:
         return {'ok': True, 'skipped': 'processing in progress'}
-    
-    
+    claim = supabase_client.rpc('claim_next_upload_job').execute()
+    job = claim.data
+    if not job:
+        return {'ok': True, 'no_pending': True}
+    job_id = job['job_id']
+    lease_id = job['lease_id']
+
+    lease = supabase_client.table('lease_documents').select('*').eq('lease_id', lease_id).execute()
+    file_path = lease.get("file_path")
+    if not file_path:
+        raise HTTPException(status_code=400, detail="Missing file_path")
+    try:
+        job_queue.put_nowait((job_id, lease))
+        (
+            supabase_client.table("tenant")
+            .update({"Available": False})
+            .eq("tenant_id", lease.get("tenant_id"))
+            .execute()  # ✅ actually run it
+        )
+    except Exception as e:
+        print(f"[{job_id}] Failed to queue job: {e}")
+        job_status[job_id] = {"status": "error", "error": str(e), "result": None}
+        supabase_client.table("Upload_Job_Status").update({"job_info": job_status[job_id]}).eq("job_id", job_id).execute()
+        raise HTTPException(status_code=500, detail=f"Queue failed: {e}")
+
+    return {"status": job_status[job_id], "job_id": job_id}
+
+
+
     
 @app.post("/process-lease")
 async def process_file(request: Request, authorization: Optional[str] = Header(default=None)):
