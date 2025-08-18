@@ -8,4 +8,4 @@ COPY cron/cron_tick.sh /app/cron_tick.sh
 RUN chmod +x /app/cron_tick.sh
 
 # Render runs the container on the schedule and executes this CMD
-CMD ["/cron/cron_tick.sh"]
+CMD ["/app/cron_tick.sh"]
