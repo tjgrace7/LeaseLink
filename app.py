@@ -218,6 +218,7 @@ def get_job_status(job_id: str):
 
 @app.post('/internal/cron/tick')
 def cron_tick(x_cron_secret: str = Header(default="")):
+    
     if x_cron_secret != CRON_SECRET:
         raise HTTPException(status_code=401, detail='Unauthorized')
     five_min_ago = (datetime.now(datetime.timezone.utc) - timedelta(minutes=5)).isoformat() + "Z"
@@ -231,16 +232,27 @@ def cron_tick(x_cron_secret: str = Header(default="")):
     job_id = job['job_id']
     lease_id = job['lease_id']
 
-    lease = supabase_client.table('lease_documents').select('*').eq('lease_id', lease_id).execute()
-    file_path = lease.get("file_path")
+    lease_resp = (
+        supabase_client
+        .table('lease_documents')
+        .select('lease_id,file_path,tenant_id')
+        .eq('lease_id', lease_id)
+        .execute()
+    )
+    if not lease_resp or not lease_resp.data:
+        raise HTTPException(status_code=404, detail="Lease not found")
+
+    lease_row = lease_resp.data[0] if isinstance(lease_resp.data, list) else lease_resp.data
+    file_path = lease_row.get('file_path')
+    print(lease_row)
     if not file_path:
-        raise HTTPException(status_code=400, detail="Missing file_path")
+        raise HTTPException(status_code=400, detail="Missing file_path on lease")
     try:
-        job_queue.put_nowait((job_id, lease))
+        job_queue.put_nowait((job_id, lease_row))
         (
             supabase_client.table("tenant")
             .update({"Available": False})
-            .eq("tenant_id", lease.get("tenant_id"))
+            .eq("tenant_id", lease_row.get("tenant_id"))
             .execute()  # ✅ actually run it
         )
     except Exception as e:
