@@ -335,6 +335,7 @@ def extract_text_from_pdf(
 
         # flush any remaining points
         if batched_points:
+            print(batched_points)
             qdrant_client.upsert(collection_name=collectionName, points=batched_points)
             batched_points.clear()
 

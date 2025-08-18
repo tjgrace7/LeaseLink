@@ -24,6 +24,7 @@ import traceback
 import signal
 from queue import Queue
 from anthropic import Anthropic
+from datetime import datetime, timedelta
 
 app = FastAPI()
 claude_model = "claude-sonnet-4-20250514"
@@ -47,6 +48,7 @@ SUPABASE_JWT = os.getenv("SUPABASE_JWT")
 # API keys
 OPENAI_API_KEY = os.getenv("OPEN_AI_PROJECT_KEY")
 CLAUDE_API_KEY = os.getenv("Claude_API_KEY")
+CRON_SECRET = os.getenv('CRON_SECRET', "")
 
 # Clients (used only in the parent process / web process)
 OpenAIclient = OpenAI(api_key=OPENAI_API_KEY)
@@ -213,6 +215,17 @@ def get_job_status(job_id: str):
         return {"Status": "unknown"}
     return status
 
+
+@app.post('/internal/cron/tick')
+def cron_tick(x_cron_secret: str = Header(default="")):
+    if x_cron_secret != CRON_SECRET:
+        raise HTTPException(status_code=401, detail='Unauthorized')
+    five_min_ago = (datetime.now(datetime.timezone.utc) - timedelta(minutes=5)).isoformat() + "Z"
+    busy = (supabase_client.table("Upload_Job_Status").select('*').eq('job_info[status]', 'processing').gte('updated_at', five_min_ago).execute())
+    if(busy.count or 0) > 0:
+        return {'ok': True, 'skipped': 'processing in progress'}
+    
+    
 @app.post("/process-lease")
 async def process_file(request: Request, authorization: Optional[str] = Header(default=None)):
     job_id = str(uuid.uuid4())

@@ -8,7 +8,7 @@ def Clear_Uploads(job_id, bucket, file_path, job_status):
         supabaseurl = os.getenv("SUPABASE_URL")
         service_key = os.getenv("SUPABASE_SERVICE_API_KEY")
         supabase = create_client(supabaseurl, service_key)
-
+        print(job_status)
 
         try:
             url = f"{supabaseurl}/storage/v1/object/{bucket}/{file_path}"

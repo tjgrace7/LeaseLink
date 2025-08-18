@@ -51,7 +51,7 @@ def EmbedFiles(
                 "unitid": unitid,
                 "pageNumber": pagenumber,
                 "source_doc": sourcedocname,
-                "upload_date": datetime.utcnow().isoformat(),
+                "upload_date": datetime.now.isoformat(),
                 "text": text,
                 "session_id": upload_session_id,
                 "source_id": f"{upload_session_id}_{tenantid}_{sourcedocname}_{pagenumber}_{chunkindex}",
