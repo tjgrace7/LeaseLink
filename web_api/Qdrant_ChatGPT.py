@@ -98,7 +98,7 @@ Return a **single, semantically precise** version of the user's question that wi
         print("Qdrant Search")
         results = q_client.search(
             collection_name=collection_Name,
-            query_vector=("dense-vectors", message_vector),
+            query_vector=("dense-vector", message_vector),
             limit=20,
             with_payload=True,
             with_vectors=False,
