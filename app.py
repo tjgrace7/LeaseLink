@@ -68,6 +68,7 @@ def job_worker():
     while True:
         job_id, lease_request = job_queue.get()
         try:
+            print(job_id)
             print(f"[{job_id}] Starting Job")
             job_status[job_id]["status"] = "in_progress"  # ✅ fixed typo
             export_lease(job_id, lease_request)
@@ -112,7 +113,7 @@ def export_lease(job_id, lease_request):
     The *internal* page work is now process-parallel (see file #2).
     """
     try:
-        job_status["status"] = "in_progress"  # ✅ keep consistent
+        job_status[job_id]["status"] = "in_progress"  # ✅ keep consistent
         print("Start LeaseLink")
 
         upload_lease_manager.load_pdf(
@@ -253,6 +254,7 @@ def cron_tick(x_cron_secret: str = Header(default="")):
             return {"ok": True, "no_pending": True}
 
         job_id = job.get("job_id")
+        print(job_id)
         lease_id = job.get("lease_id")
         if not job_id or not lease_id:
             raise HTTPException(status_code=400, detail=f"RPC payload missing keys: {job}")
