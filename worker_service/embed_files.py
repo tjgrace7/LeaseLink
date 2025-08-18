@@ -43,7 +43,7 @@ def EmbedFiles(
         # Build Qdrant point — vector MUST be a flat list, not {"dense": ...}
         point = PointStruct(
             id=str(uuid4()),
-            vector=vector,  # <-- flat list OK for single-vector collections
+            vector={'dense-vector':vector},  # <-- flat list OK for single-vector collections
             payload={
                 "tenantid": tenantid,
                 "propertymanagerid": propertymanagerid,
