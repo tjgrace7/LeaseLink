@@ -66,9 +66,20 @@ job_queue = Queue()
 
 def job_worker():
     while True:
-        job_id, lease_request = job_queue.get()
+        item = job_queue.get()  # item is a dict
         try:
+            if not isinstance(item, dict):
+                raise TypeError(f"Expected dict, got {type(item)}: {item!r}")
+
+            job_id = item.get("job_id")
+            lease_request = item.get("lease_request") or {}
+
+            if not job_id:
+                raise ValueError("Missing job_id in queue item")
+            if not lease_request:
+                raise ValueError("Missing lease_request in queue item")
             print(job_id)
+            print(lease_request)
             print(f"[{job_id}] Starting Job")
             job_status[job_id]["status"] = "in_progress"  # ✅ fixed typo
             export_lease(job_id, lease_request)
