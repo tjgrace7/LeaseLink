@@ -277,7 +277,7 @@ def cron_tick(x_cron_secret: str = Header(default="")):
         # 5) Enqueue minimal payload (ensure job_queue exists and is thread-safe)
         payload = {
             'job_id': job_id,
-            "lease_document_id": lease_id,
+            'lease_request':{"lease_document_id": lease_id,
             "tenant_id": lease_row.get("tenant_id"),
             "file_path": file_path,
             'user_id': lease_row.get('created_by'),
@@ -285,7 +285,7 @@ def cron_tick(x_cron_secret: str = Header(default="")):
             'unit_id':lease_row.get("unit_id"),
             'tenant_id': lease_row.get("tenant_id"),
             'bucket': 'lease-docs',
-            'company_id' : lease_row.get("company_id"),            
+            'company_id' : lease_row.get("company_id")      }    
         }
         job_queue.put_nowait(payload)
 
