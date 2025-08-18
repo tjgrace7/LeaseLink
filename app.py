@@ -240,7 +240,7 @@ def cron_tick(x_cron_secret: str = Header(default="")):
             raise HTTPException(status_code=401, detail="Unauthorized")
 
         # 2) Throttle if a job is already processing in the last 5 min
-        five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
         busy_resp = (
             supabase_client
             .table("Upload_Job_Status")
