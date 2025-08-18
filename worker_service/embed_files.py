@@ -1,46 +1,67 @@
 from datetime import datetime
 from uuid import uuid4
 from qdrant_client.models import PointStruct
-from memory_profiler import profile
 import tiktoken
 
-#Takes Chunked Text and embeds files with openai embedding
-def EmbedFiles(client, chunk, tenantid, propertymanagerid, propertyid,unitid, upload_session_id, pagenumber, sourcedocname, chunkindex, company_id, chunk_class):
-    #If creating a tenant, sets tenant id null
-    if tenantid is None:
-        tenantid= ""
-    #Uses openAI embeding to embed chunks
+def EmbedFiles(
+    client,
+    chunk,
+    tenantid,
+    propertymanagerid,
+    propertyid,
+    unitid,
+    upload_session_id,
+    pagenumber,
+    sourcedocname,
+    chunkindex,
+    company_id,
+    chunk_class
+):
+    tenantid = tenantid or ""
+
     try:
-        chunk = chunk.strip()
-        response = client.embeddings.create(
-            input=chunk,
-            model="text-embedding-3-large"
+        text = (chunk or "").strip()
+        if not text:
+            # Return a no-op point and zero cost if empty
+            return None, 0.0
+
+        # Embed
+        resp = client.embeddings.create(input=text, model="text-embedding-3-large")
+        vector = resp.data[0].embedding  # <-- this is list[float]
+
+        # (Optional) sanity check against your Qdrant vector size (e.g., 3072)
+        # assert len(vector) == 3072, f"Unexpected embedding dim: {len(vector)}"
+
+        # Cost calc (text-embedding-3-large is $0.13 / 1M tokens = 1.3e-7 per token)
+        try:
+            encoding = tiktoken.encoding_for_model("text-embedding-3-large")
+            token_count = len(encoding.encode(text))
+        except Exception:
+            token_count = 0
+        embedding_cost = token_count * 0.00000013
+
+        # Build Qdrant point — vector MUST be a flat list, not {"dense": ...}
+        point = PointStruct(
+            id=str(uuid4()),
+            vector=vector,  # <-- flat list OK for single-vector collections
+            payload={
+                "tenantid": tenantid,
+                "propertymanagerid": propertymanagerid,
+                "propertyid": propertyid,
+                "unitid": unitid,
+                "pageNumber": pagenumber,
+                "source_doc": sourcedocname,
+                "upload_date": datetime.utcnow().isoformat(),
+                "text": text,
+                "session_id": upload_session_id,
+                "source_id": f"{upload_session_id}_{tenantid}_{sourcedocname}_{pagenumber}_{chunkindex}",
+                "managementcompany_id": company_id,
+                "highlight_id": str(uuid4()),
+                "embedding_class": chunk_class,
+            },
         )
-        encoding = tiktoken.encoding_for_model('text-embedding-3-large')
-        token_count = len(encoding.encode(chunk))
-        embedding_cost = (token_count * 0.00000013) if token_count else 0.0
-        #Gets embedded vector from openai
-        vector = response.data[0].embedding
-        #prepares payload for vector db
+        return point, float(embedding_cost)
+
     except Exception as e:
-        print("Error Embedding Files", e)
-    return PointStruct(
-        id=str(uuid4()),
-        vector = vector,
-        payload={
-            "tenantid": tenantid,
-            "propertymanagerid": propertymanagerid,
-            "propertyid": propertyid,
-            "unitid": unitid,
-            "pageNumber": pagenumber,
-            "source_doc": sourcedocname,
-            "upload_date": datetime.utcnow().isoformat(),
-            "text": chunk,
-            "session_id" : upload_session_id,
-            "source_id" : f"{upload_session_id}_{tenantid}_{sourcedocname}_{pagenumber}_{chunkindex}",
-            "managementcompany_id" : company_id,
-            "highlight_id" : str(uuid4()),
-            'embedding_class': chunk_class
-        }), embedding_cost
-   
-    
+        print("Error Embedding Files:", e)
+        return None, 0.0

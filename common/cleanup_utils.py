@@ -27,7 +27,7 @@ def Clear_Uploads(job_id, bucket, file_path, job_status):
             api_key = os.getenv("QDRANT_API_KEY")
         )
         qdrant_client.delete(
-            collection_name="Test-Leases",
+            collection_name="Lease_Link",
             points_selector=Filter(
                 must=[
                     FieldCondition(key="source_doc", match=MatchValue(value=file_path))

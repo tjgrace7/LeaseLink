@@ -322,6 +322,7 @@ def extract_text_from_pdf(
 
                     if points:
                         batched_points.extend(points)
+                        print(batched_points)
                         if len(batched_points) >= batch_size:
                             qdrant_client.upsert(collection_name=collectionName, points=batched_points)
                             batched_points.clear()
@@ -342,5 +343,7 @@ def extract_text_from_pdf(
 
     except Exception as e:
         print("Error Getting Vector. Deleting Files from supabase", e)
+        job_status['status'] = 'error'
+        job_status['error'] = e
         Clear_Uploads(job_id, bucket, file_path, job_status)
         return 0.0

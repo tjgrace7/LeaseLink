@@ -1,4 +1,4 @@
-from qdrant_client.http.models import  Filter, FieldCondition, MatchValue
+from qdrant_client.http.models import  Filter, FieldCondition, MatchValue, SearchParams
 from qdrant_client.http import models as rest
 import json
 from dotenv import load_dotenv
