@@ -24,7 +24,11 @@ import traceback
 import signal
 from queue import Queue
 from anthropic import Anthropic
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+import logging, traceback
+
+log = logging.getLogger("cron")
+log.setLevel(logging.INFO)
 
 app = FastAPI()
 claude_model = "claude-sonnet-4-20250514"
@@ -216,52 +220,91 @@ def get_job_status(job_id: str):
     return status
 
 
-@app.post('/internal/cron/tick')
+@app.post("/internal/cron/tick")
 def cron_tick(x_cron_secret: str = Header(default="")):
-    
-    if x_cron_secret != CRON_SECRET:
-        raise HTTPException(status_code=401, detail='Unauthorized')
-    five_min_ago = (datetime.now(datetime.timezone.utc) - timedelta(minutes=5)).isoformat() + "Z"
-    busy = (supabase_client.table("Upload_Job_Status").select('*').filter('job_info->>status', 'eq', 'processing').gte('updated_at', five_min_ago).execute())
-    if(busy.count or 0) > 0:
-        return {'ok': True, 'skipped': 'processing in progress'}
-    claim = supabase_client.rpc('claim_next_upload_job').execute()
-    job = claim.data
-    if not job:
-        return {'ok': True, 'no_pending': True}
-    job_id = job['job_id']
-    lease_id = job['lease_id']
-
-    lease_resp = (
-        supabase_client
-        .table('lease_documents')
-        .select('lease_id,file_path,tenant_id')
-        .eq('lease_id', lease_id)
-        .execute()
-    )
-    if not lease_resp or not lease_resp.data:
-        raise HTTPException(status_code=404, detail="Lease not found")
-
-    lease_row = lease_resp.data[0] if isinstance(lease_resp.data, list) else lease_resp.data
-    file_path = lease_row.get('file_path')
-    print(lease_row)
-    if not file_path:
-        raise HTTPException(status_code=400, detail="Missing file_path on lease")
     try:
-        job_queue.put_nowait((job_id, lease_row))
-        (
-            supabase_client.table("tenant")
-            .update({"Available": False})
-            .eq("tenant_id", lease_row.get("tenant_id"))
-            .execute()  # ✅ actually run it
-        )
-    except Exception as e:
-        print(f"[{job_id}] Failed to queue job: {e}")
-        job_status[job_id] = {"status": "error", "error": str(e), "result": None}
-        supabase_client.table("Upload_Job_Status").update({"job_info": job_status[job_id]}).eq("job_id", job_id).execute()
-        raise HTTPException(status_code=500, detail=f"Queue failed: {e}")
+        # 1) Auth
+        if x_cron_secret != CRON_SECRET:
+            raise HTTPException(status_code=401, detail="Unauthorized")
 
-    return {"status": job_status[job_id], "job_id": job_id}
+        # 2) Throttle if a job is already processing in the last 5 min
+        five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=5)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        busy_resp = (
+            supabase_client
+            .table("Upload_Job_Status")
+            .select("job_id, job_info, updated_at", count="exact")
+            .filter("job_info->>status", "eq", "processing")
+            .gte("updated_at", five_min_ago)
+            .execute()
+        )
+        busy_count = getattr(busy_resp, "count", None) or (len(busy_resp.data or []) if getattr(busy_resp, "data", None) else 0)
+        if busy_count > 0:
+            return {"ok": True, "skipped": "processing in progress", "busy_count": busy_count}
+
+        # 3) Claim the next job
+        claim = supabase_client.rpc("claim_next_upload_job").execute()
+        job = None
+        if claim and getattr(claim, "data", None):
+            job = claim.data[0] if isinstance(claim.data, list) else claim.data
+
+        if not job:
+            return {"ok": True, "no_pending": True}
+
+        job_id = job.get("job_id")
+        lease_id = job.get("lease_id")
+        if not job_id or not lease_id:
+            raise HTTPException(status_code=400, detail=f"RPC payload missing keys: {job}")
+
+        # 4) Fetch the lease row (use .single() to avoid list indexing issues)
+        lease_resp = (
+            supabase_client
+            .table("lease_documents")
+            .select("lease_id,file_path,tenant_id")
+            .eq("lease_id", lease_id)
+            .single()
+            .execute()
+        )
+        lease_row = lease_resp.data  # .single() returns an object, not a list
+        if not lease_row:
+            raise HTTPException(status_code=404, detail=f"Lease not found for lease_id={lease_id}")
+
+        file_path = lease_row.get("file_path")
+        if not file_path:
+            raise HTTPException(status_code=400, detail="Missing file_path on lease")
+
+        # 5) Enqueue minimal payload (ensure job_queue exists and is thread-safe)
+        payload = {
+            "job_id": job_id,
+            "lease_id": lease_id,
+            "tenant_id": lease_row.get("tenant_id"),
+            "file_path": file_path,
+        }
+        job_queue.put_nowait(payload)
+
+        # 6) Example update (ensure table/column names are correct in your schema)
+        try:
+            (
+                supabase_client.table("tenant")  # change to "tenants" if that's your actual table
+                .update({"Available": False})    # change casing if your column is "available"
+                .eq("tenant_id", lease_row.get("tenant_id"))
+                .execute()
+            )
+        except Exception as e:
+            # Non-fatal: log and continue
+            log.warning(f"Tenant availability update failed: {e}")
+
+        # 7) Record status
+        job_status[job_id] = {"status": "queued", "error": None, "result": None}
+        return {"ok": True, "job_id": job_id, "status": job_status[job_id]}
+
+    except HTTPException:
+        # Let FastAPI return the intended HTTP code, but also log detail
+        log.error("HTTPException in cron_tick:\n%s", traceback.format_exc())
+        raise
+    except Exception as e:
+        # Log full traceback for debugging
+        log.error("Unhandled exception in cron_tick: %s\n%s", e, traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 
