@@ -138,7 +138,7 @@ def export_lease(job_id, lease_request):
     except Exception as e:
         bucket = lease_request.get("bucket")
         file_path = lease_request.get("file_path")
-        upload_lease_manager.Clear_Uploads(job_id, bucket, file_path, job_status)
+        upload_lease_manager.Clear_Uploads(job_id, bucket, file_path, job_status[job_id])
         print(f"Error processing job {job_id}: {e}")
 
 def handle_entity_question(message_request, supabase_client, qdrant_client, OpenAIclient, collectionName):
@@ -287,6 +287,7 @@ def cron_tick(x_cron_secret: str = Header(default="")):
             'bucket': 'lease-docs',
             'company_id' : lease_row.get("company_id")      }    
         }
+        job_status[job_id] = {"status": 'preparing', 'error': 'null', 'results': 'null'}
         job_queue.put_nowait(payload)
 
         # 6) Example update (ensure table/column names are correct in your schema)
