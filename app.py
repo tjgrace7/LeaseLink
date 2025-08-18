@@ -237,12 +237,14 @@ def cron_tick(x_cron_secret: str = Header(default="")):
             .gte("updated_at", five_min_ago)
             .execute()
         )
+        print(five_min_ago)
         busy_count = getattr(busy_resp, "count", None) or (len(busy_resp.data or []) if getattr(busy_resp, "data", None) else 0)
         if busy_count > 0:
             return {"ok": True, "skipped": "processing in progress", "busy_count": busy_count}
 
         # 3) Claim the next job
         claim = supabase_client.rpc("claim_next_upload_job").execute()
+        print(claim)
         job = None
         if claim and getattr(claim, "data", None):
             job = claim.data[0] if isinstance(claim.data, list) else claim.data
@@ -259,7 +261,7 @@ def cron_tick(x_cron_secret: str = Header(default="")):
         lease_resp = (
             supabase_client
             .table("lease_documents")
-            .select("lease_id,file_path,tenant_id")
+            .select("*")
             .eq("lease_id", lease_id)
             .single()
             .execute()
@@ -268,16 +270,22 @@ def cron_tick(x_cron_secret: str = Header(default="")):
         if not lease_row:
             raise HTTPException(status_code=404, detail=f"Lease not found for lease_id={lease_id}")
 
-        file_path = lease_row.get("file_path")
+        file_path = lease_row.get("lease_file_path")
         if not file_path:
             raise HTTPException(status_code=400, detail="Missing file_path on lease")
 
         # 5) Enqueue minimal payload (ensure job_queue exists and is thread-safe)
         payload = {
             "job_id": job_id,
-            "lease_id": lease_id,
+            "lease_document_id": lease_id,
             "tenant_id": lease_row.get("tenant_id"),
             "file_path": file_path,
+            'user_id': lease_row.get('created_by'),
+            'property_id': lease_row.get("property_id"),
+            'unit_id':lease_row.get("unit_id"),
+            'tenant_id': lease_row.get("tenant_id"),
+            'bucket': 'lease-docs',
+            'company_id' : lease_row.get("company_id"),            
         }
         job_queue.put_nowait(payload)
 
