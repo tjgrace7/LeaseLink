@@ -112,7 +112,7 @@ def export_lease(job_id, lease_request):
     The *internal* page work is now process-parallel (see file #2).
     """
     try:
-        job_status[job_id]["status"] = "in_progress"  # ✅ keep consistent
+        job_status["status"] = "in_progress"  # ✅ keep consistent
         print("Start LeaseLink")
 
         upload_lease_manager.load_pdf(
@@ -138,7 +138,7 @@ def export_lease(job_id, lease_request):
     except Exception as e:
         bucket = lease_request.get("bucket")
         file_path = lease_request.get("file_path")
-        upload_lease_manager.Clear_Uploads(job_id, bucket, file_path, job_status[job_id])
+        upload_lease_manager.Clear_Uploads(job_id, bucket, file_path, job_status)
         print(f"Error processing job {job_id}: {e}")
 
 def handle_entity_question(message_request, supabase_client, qdrant_client, OpenAIclient, collectionName):
