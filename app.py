@@ -221,9 +221,10 @@ def cron_tick(x_cron_secret: str = Header(default="")):
     if x_cron_secret != CRON_SECRET:
         raise HTTPException(status_code=401, detail='Unauthorized')
     five_min_ago = (datetime.now(datetime.timezone.utc) - timedelta(minutes=5)).isoformat() + "Z"
-    busy = (supabase_client.table("Upload_Job_Status").select('*').eq('job_info[status]', 'processing').gte('updated_at', five_min_ago).execute())
+    busy = (supabase_client.table("Upload_Job_Status").select('*').filter('job_info->>status', 'eq', 'processing').gte('updated_at', five_min_ago).execute())
     if(busy.count or 0) > 0:
         return {'ok': True, 'skipped': 'processing in progress'}
+    
     
     
 @app.post("/process-lease")

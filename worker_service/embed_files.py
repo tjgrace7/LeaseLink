@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import uuid4
 from qdrant_client.models import PointStruct
 import tiktoken
@@ -51,7 +51,7 @@ def EmbedFiles(
                 "unitid": unitid,
                 "pageNumber": pagenumber,
                 "source_doc": sourcedocname,
-                "upload_date": datetime.now.isoformat(),
+                "upload_date": datetime.now(timezone.utc).isoformat(),
                 "text": text,
                 "session_id": upload_session_id,
                 "source_id": f"{upload_session_id}_{tenantid}_{sourcedocname}_{pagenumber}_{chunkindex}",
