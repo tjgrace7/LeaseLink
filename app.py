@@ -242,14 +242,14 @@ def cron_tick(x_cron_secret: str = Header(default="")):
         # 2) Throttle if a job is already processing in the last 5 min
         five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=15)).strftime("%Y-%m-%dT%H:%M:%SZ")
         busy_resp = (
-            supabase_client
-              .table('Upload_Job_Status')
-              .select('job_id, job_info, updated_at')
-              .in('job_info->>status', ['processing', 'in_progress', 'extracted'])
-              .gte('updated_at', five_min_ago)              // only rows updated in last 5 min
-              .order('updated_at', { ascending: false })    // newest first
-              .limit(1)                                     
-              .maybeSingle();          
+             supabase_client
+            .table("Upload_Job_Status")
+            .select("job_id, job_info, updated_at")
+            .in_("job_info->>status", ["processing", "in_progress", "extracted"])  # multiple statuses
+            .gte("updated_at", five_min_ago)                                       # keep the 5‑min cutoff
+            .order("updated_at", desc=True)                                        # newest first
+            .limit(1)
+            .execute()
         )
         
         print(five_min_ago)
