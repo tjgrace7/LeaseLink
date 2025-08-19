@@ -326,7 +326,9 @@ def cron_tick(x_cron_secret: str = Header(default="")):
             log.warning(f"Job_Status not uploaded")
         # 7) Record status
         print("Complete")
-        return {"ok": True, "job_id": job_id, "status": job_status[job_id]}
+        return JSONResponse(
+            {"ok": True, "job_id": job_id, "status": job_status[job_id]},
+            status_code=200)
 
     except HTTPException:
         # Let FastAPI return the intended HTTP code, but also log detail

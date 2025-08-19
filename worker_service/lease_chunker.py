@@ -287,7 +287,7 @@ def extract_text_from_pdf(
     total_embedding_cost = 0.0
     batched_points = []
     batch_size = int(os.getenv("QDRANT_UPSERT_BATCH", "200"))
-    workers = int(os.getenv("OCR_WORKERS", max(1, (os.cpu_count() or 2) - 1)))
+    workers = 5
 
     print(f"Launching OCR with {workers} worker processes over {total_pages} pages")
 
