@@ -303,6 +303,7 @@ def cron_tick(x_cron_secret: str = Header(default="")):
                 'company_id' : lease_row.get("company_id")      }    
         }
         job_status[job_id] = {"status": 'preparing', 'error': 'null', 'results': 'null'}
+        
         job_queue.put_nowait(payload)
 
         # 6) Example update (ensure table/column names are correct in your schema)
@@ -312,13 +313,19 @@ def cron_tick(x_cron_secret: str = Header(default="")):
                 .update({"Available": False})    # change casing if your column is "available"
                 .eq("tenant_id", lease_row.get("tenant_id"))
                 .execute()
+
             )
         except Exception as e:
             # Non-fatal: log and continue
             log.warning(f"Tenant availability update failed: {e}")
-
+        try:
+            (
+                supabase_client.table('Upload_Job_Status').update({'job_status': job_status[job_id]}).eq('job_id', job_id).execute()
+            )
+        except Exception as e:
+            log.warning(f"Job_Status not uploaded")
         # 7) Record status
-        job_status[job_id] = {"status": "queued", "error": None, "result": None}
+        print("Complete")
         return {"ok": True, "job_id": job_id, "status": job_status[job_id]}
 
     except HTTPException:
