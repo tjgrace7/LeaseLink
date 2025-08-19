@@ -240,15 +240,18 @@ def cron_tick(x_cron_secret: str = Header(default="")):
             raise HTTPException(status_code=401, detail="Unauthorized")
 
         # 2) Throttle if a job is already processing in the last 5 min
-        five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=10)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=15)).strftime("%Y-%m-%dT%H:%M:%SZ")
         busy_resp = (
             supabase_client
-            .table("Upload_Job_Status")
-            .select("job_id, job_info, updated_at", count="exact")
-            .filter("job_info->>status", "eq", "processing")
-            .gte("updated_at", five_min_ago)
-            .execute()
+              .from('Upload_Job_Status')
+              .select('job_id, job_info, updated_at')
+              .in('job_info->>status', ['processing', 'in_progress', 'extracted'])
+              .gte('updated_at', five_min_ago)              // only rows updated in last 5 min
+              .order('updated_at', { ascending: false })    // newest first
+              .limit(1)                                     
+              .maybeSingle();          
         )
+        
         print(five_min_ago)
         busy_count = getattr(busy_resp, "count", None) or (len(busy_resp.data or []) if getattr(busy_resp, "data", None) else 0)
         if busy_count > 0:
