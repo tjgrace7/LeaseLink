@@ -243,7 +243,7 @@ def cron_tick(x_cron_secret: str = Header(default="")):
         five_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=15)).strftime("%Y-%m-%dT%H:%M:%SZ")
         busy_resp = (
             supabase_client
-              .from('Upload_Job_Status')
+              .table('Upload_Job_Status')
               .select('job_id, job_info, updated_at')
               .in('job_info->>status', ['processing', 'in_progress', 'extracted'])
               .gte('updated_at', five_min_ago)              // only rows updated in last 5 min
