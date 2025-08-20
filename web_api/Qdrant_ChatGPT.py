@@ -115,7 +115,7 @@ Return a **single, semantically precise** version of the user's question that wi
 
         print("Combining Search Results")
         context = "\n\n".join([
-            f"source_doc = {r.payload.get('source_doc', 'unknown')}, pageNumber = {r.payload.get('pageNumber', 'N/A')}\n{r.payload['text']}"
+            f"source_doc = {r.payload.get('source_doc', 'unknown')}, pageNumber = {r.payload.get('pageNumber', 'N/A')}, tenantid = {r.payload.get('tenantid', 'N/A')}\n{r.payload['text']}"
             for r in results if "text" in r.payload
         ])
 
