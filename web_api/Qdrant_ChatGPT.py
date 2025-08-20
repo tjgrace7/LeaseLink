@@ -210,8 +210,10 @@ Use this format exactly:
         final_message = parts[0].strip()
 
         json_data = extract_json_from_response(chat_message)
+        
         if json_data:
             for data in json_data:
+                print(data)
                 tenant_id = data['tenantid']
                 print(tenant_id)
                 tenant_resp = (
