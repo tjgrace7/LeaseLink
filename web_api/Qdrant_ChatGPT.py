@@ -115,10 +115,9 @@ Return a **single, semantically precise** version of the user's question that wi
 
         print("Combining Search Results")
         context = "\n\n".join([
-            f"source_doc = {r.payload.get('source_doc', 'unknown')}, pageNumber = {r.payload.get('pageNumber', 'N/A')}, tenantid = {r.payload.get('tenantid', 'N/A')}\n{r.payload['text']}"
+            f"source_doc = {r.payload.get('source_doc', 'unknown')}, pageNumber = {r.payload.get('pageNumber', 'N/A')}, tenantid = {r.payload.get('tenantid', 'N/A')}, managementcompany_id = {r.payload.get('managementcompany_id')}\n{r.payload['text']}"
             for r in results if "text" in r.payload
         ])
-        print(context)
 
     except Exception as e:
         print("Error during preprocessing/Qdrant:", e)
@@ -175,7 +174,8 @@ Use this format exactly:
 ```json
 [
   Curly Bracket
-    'tenantid': 'a123wad',
+    "tenantid": 'a123wad',
+    "managementcompany_id": "uuid",
     "source_doc": "leaselink/dairy_queen/",
     "pageNumber": 12,
     "highlight_text": "abc-123"
@@ -213,6 +213,7 @@ Use this format exactly:
         if json_data:
             for data in json_data:
                 tenant_id = data['tenantid']
+                print(tenant_id)
                 tenant_resp = (
                     supabase_client
                     .table('tenant')
@@ -222,6 +223,7 @@ Use this format exactly:
                 )
 
                 company_id = data['managementcompany_id']
+                print(company_id)
                 company_resp = (
                     supabase_client
                     .table("Property_Management_Companies")
