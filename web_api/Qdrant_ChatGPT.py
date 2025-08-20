@@ -7,7 +7,8 @@ import re
 import tiktoken
 import common.Supabase_api as Supabase_api
 from memory_profiler import profile
-
+import posixpath
+from urllib.parse import quote
 
 
 
@@ -237,7 +238,7 @@ Use this format exactly:
                 # Safely extract data
                 tenant_name = tenant_resp.data[0]['Tenant_Name'].lower() if tenant_resp.data else "unknown_tenant"
                 company_name = company_resp.data[0]['company_name'].lower() if company_resp.data else "unknown_company"
-                file_path = company_name/tenant_name/data['source_doc']
+                file_path = posixpath.join(company_name, tenant_name, data['source_doc'])
 
                 print(file_path)
                 signed_url = Supabase_api.get_signed_url(supabase_client, "lease-docs", file_path)
