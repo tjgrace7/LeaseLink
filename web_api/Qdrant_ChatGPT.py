@@ -118,7 +118,7 @@ Return a **single, semantically precise** version of the user's question that wi
             f"source_doc = {r.payload.get('source_doc', 'unknown')}, pageNumber = {r.payload.get('pageNumber', 'N/A')}, tenantid = {r.payload.get('tenantid', 'N/A')}\n{r.payload['text']}"
             for r in results if "text" in r.payload
         ])
-
+        print(context)
 
     except Exception as e:
         print("Error during preprocessing/Qdrant:", e)
@@ -164,7 +164,7 @@ The user is a property manager asking about a tenant, property, unit, or other p
 
 Answer the question clearly.
 
-At the end of your answer, if you used any specific context chunks, return them in the following JSON format. The `highlight_text` should be the exact text from the chunk you used in your answer.
+At the end of your answer, if you used any specific context chunks, return them in the following JSON format. The `highlight_text` should be the exact text from the chunk you used in your answer. Use tenantid from context to answer
 
 Do NOT include any chunks that were not used in your answer.
 
