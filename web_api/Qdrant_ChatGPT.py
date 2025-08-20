@@ -211,9 +211,32 @@ Use this format exactly:
         json_data = extract_json_from_response(chat_message)
         if json_data:
             for data in json_data:
-                file_path = data["source_doc"]
+                tenant_id = data['tenantid']
+                tenant_resp = (
+                    supabase_client
+                    .table('tenant')
+                    .select('Tenant_Name')
+                    .eq('tenant_id', tenant_id)
+                    .execute()
+                )
+
+                company_id = data['managementcompany_id']
+                company_resp = (
+                    supabase_client
+                    .table("Property_Management_Companies")
+                    .select('company_name')
+                    .eq('company_id', company_id)
+                    .execute()
+                )
+
+                # Safely extract data
+                tenant_name = tenant_resp.data[0]['Tenant_Name'].lower() if tenant_resp.data else "unknown_tenant"
+                company_name = company_resp.data[0]['company_name'].lower() if company_resp.data else "unknown_company"
+                file_path = company_name/tenant_name/data['source_doc']
+
                 print(file_path)
                 signed_url = Supabase_api.get_signed_url(supabase_client, "lease-docs", file_path)
+                print(signed_url)
                 viewer_url = f"{signed_url}#page={data['pageNumber']}&highlight_text={data['highlight_text']}"
                 data["viewer_url"] = viewer_url
 
