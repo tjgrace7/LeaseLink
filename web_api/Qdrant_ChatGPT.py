@@ -175,6 +175,7 @@ Use this format exactly:
 ```json
 [
   Curly Bracket
+    'tenantid': 'a123wad',
     "source_doc": "leaselink/dairy_queen/",
     "pageNumber": 12,
     "highlight_text": "abc-123"
