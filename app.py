@@ -35,7 +35,7 @@ claude_model = "claude-sonnet-4-20250514"
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://www.leaselink.ai", "http://localhost:5173"],
+    allow_origins=["https://www.leaselink.ai"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

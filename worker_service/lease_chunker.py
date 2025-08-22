@@ -310,7 +310,7 @@ def extract_text_from_pdf(
                     propertyid,
                     unit_id,
                     upload_session_id,
-                    source_doc_name,
+                    file_path,
                     company_id,
                 )
                 futures.append(f)
