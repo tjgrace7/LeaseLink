@@ -192,7 +192,7 @@ def claude_extraction(pdf, claude_client, supabase_client, claude_model, verbose
 
         reader = PdfReader(BytesIO(pdf))
         total_pages = len(reader.pages)
-        chunk_size = 75
+        chunk_size = 65
         all_results = []
         total_cost_sum = 0.0
 
