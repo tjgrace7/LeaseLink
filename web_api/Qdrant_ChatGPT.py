@@ -216,6 +216,7 @@ Use this format exactly:
             for data in json_data:
 
                 file_path = data['source_doc']
+                print(file_path)
                 signed_url = Supabase_api.get_signed_url(supabase_client, "lease-docs", file_path)
                 print(signed_url)
                 viewer_url = f"{signed_url}#page={data['pageNumber']}&highlight_text={data['highlight_text']}"
