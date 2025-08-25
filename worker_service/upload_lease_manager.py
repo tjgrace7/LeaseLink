@@ -45,7 +45,8 @@ def load_pdf(
         extracted_lease_data, claude_total_cost, total_pages = claude_extractor.claude_extraction(
             pdf_file, claude_client, supabase_client, claude_model, verbose=True
         )
-
+        if extracted_lease_data is None:
+            uploadError("No Extraction Data")
         # Normalize to dict
         lease_data = (
             json.loads(extracted_lease_data)
@@ -127,6 +128,9 @@ def load_pdf(
         Supabase_api.supabase_post_request(supabase_client, [cost_upload], "lease_documents")
 
     except Exception as e:
+        uploadError(e)
+
+def uploadError(e):
         print(f"GPT extraction or supabase insert failed: {e}")
         job_status["status"] = "error"
         # reflect error to job status table
@@ -139,4 +143,3 @@ def load_pdf(
         )
         # cleanup uploaded artifacts
         Clear_Uploads(job_id, bucket_name, get_pdf, job_status)
-
