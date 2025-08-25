@@ -47,6 +47,7 @@ def load_pdf(
         )
         if extracted_lease_data is None:
             uploadError("No Extraction Data")
+            return
         # Normalize to dict
         lease_data = (
             json.loads(extracted_lease_data)
@@ -129,6 +130,7 @@ def load_pdf(
 
     except Exception as e:
         uploadError(e)
+        
 
 def uploadError(e):
         print(f"GPT extraction or supabase insert failed: {e}")
