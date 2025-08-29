@@ -187,7 +187,7 @@ def make_api_call_with_retry(claude_client, claude_model, conversation_messages,
 
 def claude_extraction(pdf, claude_client, supabase_client, claude_model, verbose=False):
     try:
-
+        start_time = datetime.now()
         ALLOWED_KEYS = get_lease_column_names(supabase_client)
 
         reader = PdfReader(BytesIO(pdf))
@@ -268,7 +268,8 @@ def claude_extraction(pdf, claude_client, supabase_client, claude_model, verbose
 
         final_result = merge_extraction_results(all_results)
         if verbose:
-
+            end_time = datetime.now()
+            duration = (end_time - start_time).total_seconds()
             print(f"✅ All chunks processed successfully")
             print(f"📄 Total pages: {total_pages}")
             print(f"🧩 Final extracted fields: {len(final_result)}")

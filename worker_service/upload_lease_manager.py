@@ -8,6 +8,7 @@ from common.cleanup_utils import Clear_Uploads
 
 from . import Textract
 
+
 def load_pdf(
     auth_id: str,
     propertyid: str,
@@ -123,8 +124,8 @@ def load_pdf(
             "upload_session_id": upload_session_id,
         }
         Supabase_api.supabase_post_request(supabase_client, [cost_upload], "lease_documents")
-        end = datetime.now
-        duration = (end-start).total_seconds()
+        end = datetime.now()
+        duration = (end-start).total_seconds() 
         print("Duration:", duration)
         print("Success")
     except Exception as e:
