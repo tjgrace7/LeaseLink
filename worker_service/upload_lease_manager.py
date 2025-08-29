@@ -2,6 +2,7 @@ from dotenv import load_dotenv
 from . import claude_extractor
 import json
 import uuid
+from datetime import datetime
 import common.Supabase_api as Supabase_api
 from common.cleanup_utils import Clear_Uploads
 
@@ -33,7 +34,7 @@ def load_pdf(
     5) Track cost back in lease_documents
     """
     load_dotenv()
-
+    start = datetime.now()
     upload_session_id = str(uuid.uuid4())
     print(f"Upload_Session_id: {upload_session_id}")
 
@@ -122,6 +123,9 @@ def load_pdf(
             "upload_session_id": upload_session_id,
         }
         Supabase_api.supabase_post_request(supabase_client, [cost_upload], "lease_documents")
+        end = datetime.now
+        duration = (end-start).total_seconds()
+        print("Duration:", duration)
         print("Success")
     except Exception as e:
         uploadError(e, job_status, supabase_client, job_id, bucket_name, get_pdf)

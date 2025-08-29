@@ -316,7 +316,7 @@ def cron_tick(x_cron_secret: str = Header(default="")):
             .execute()
         )
         busy_count = getattr(busy_resp, "count", None) or (len(busy_resp.data or []) if getattr(busy_resp, "data", None) else 0)
-        if busy_count > 0:
+        if busy_count > 4:
             return {"ok": True, "skipped": "processing in progress", "busy_count": busy_count}
 
         # 3) Try to enqueue ONE pending job
