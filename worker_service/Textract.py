@@ -23,8 +23,8 @@ S3_BUCKET = os.getenv("TEXTRACT_S3_BUCKET", "leaselinkleases")
 
 # Optional: max characters per chunk (post-section split)
 MAX_CHARS_PER_CHUNK = 4000  # set None to disable
-TEXTRACT_DETECT_PRICE_PER_PAGE   = float(os.getenv("0.015"))
-TEXTRACT_STARTJOB_PRICE_PER_PAGE = float(os.getenv("0.015"))
+TEXTRACT_DETECT_PRICE_PER_PAGE   = 0.015
+TEXTRACT_STARTJOB_PRICE_PER_PAGE = 0.015
 
 def estimate_textract_cost(mode: str, pages: int) -> float:
     """
