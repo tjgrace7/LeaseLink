@@ -14,7 +14,6 @@ load_dotenv(find_dotenv())
 
 # ----------------------------- GLOBALS --------------------------------
 
-QDRANT_COLLECTION = "Test"
 
 AWS_ACCESS_KEY_ID     = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
@@ -24,6 +23,26 @@ S3_BUCKET = os.getenv("TEXTRACT_S3_BUCKET", "leaselinkleases")
 
 # Optional: max characters per chunk (post-section split)
 MAX_CHARS_PER_CHUNK = 4000  # set None to disable
+TEXTRACT_DETECT_PRICE_PER_PAGE   = float(os.getenv("0.015"))
+TEXTRACT_STARTJOB_PRICE_PER_PAGE = float(os.getenv("0.015"))
+
+def estimate_textract_cost(mode: str, pages: int) -> float:
+    """
+    Rough per-page cost estimator so you can track OCR costs per document.
+    Configure via env vars above; AWS does not return per-call cost in responses.
+    """
+    if pages <= 0:
+        return 0.0
+    if mode == "sync":
+        return pages * TEXTRACT_DETECT_PRICE_PER_PAGE
+    # "async" or anything else falls back to async price
+    return pages * TEXTRACT_STARTJOB_PRICE_PER_PAGE
+
+# ----------------------------- CHUNKING -------------------------------
+section_regex = re.compile(
+    r"^\s*(article\s+[ivx]+|section\s+\d+(\.\d+)*|\d+\.\d+|exhibit\s+[a-z])\b",
+    re.IGNORECASE
+)
 
 # ----------------------------- CHUNKING -------------------------------
 section_regex = re.compile(
@@ -234,7 +253,8 @@ def runTextract(
     embedding_client,
     qdrant_client,
     bucket,
-    jobid
+    jobid,
+    collectionName
 ):
     """
     pdf: either bytes or a local path.
@@ -256,10 +276,13 @@ def runTextract(
             status = "SUCCEEDED"
             blocks = start["blocks"]
             total_pages = start["pages"]
+            ocr_mode = "sync"
         else:
             status = wait_for_text_job(start["job_id"])
             blocks = fetch_all_text_blocks(start["job_id"])
             total_pages = start["pages"]
+            ocr_mode = "async"
+
 
         # --- Build page-wise text
         pages_text = build_pages_text_from_lines(blocks)
@@ -289,8 +312,9 @@ def runTextract(
                     company_id=company_id,
                     source_doc_name=file_path,
                     qdrant_client=qdrant_client,
-                    collection=QDRANT_COLLECTION,
+                    collection=collectionName,
                     ensure_collection_once=ensure_once,
+
                 )
                 total_cost += cost
                 total_chunks += 1
@@ -298,11 +322,13 @@ def runTextract(
                 if total_chunks >=20:
                     total_chunks = 0
                     for point in points:
-                        upsert_point(QDRANT_COLLECTION, point, qdrant_client)
+                        upsert_point(collectionName, point, qdrant_client)
         if total_chunks > 0:
             for point in points:
-                upsert_point(QDRANT_COLLECTION, point, qdrant_client)
+                upsert_point(collectionName, point, qdrant_client)
         print("Success")
+        ocr_cost = estimate_textract_cost(ocr_mode, total_pages)
+        total_cost += ocr_cost
         return total_cost
 
     except botocore.exceptions.ClientError as e:

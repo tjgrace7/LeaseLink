@@ -84,7 +84,7 @@ def load_pdf(
             .execute()                                           # ✅ ensure update runs
         )
 
-        print("Success")
+        
         print("Starting PDF text extraction + embedding")
 
 
@@ -101,7 +101,8 @@ def load_pdf(
              embedding_client=OpenAI,
             qdrant_client=qdrant_client,
             bucket=bucket_name,
-            jobid=job_id
+            jobid=job_id,
+            collectionName=collectionName
              )
 
         # Status bookkeeping
@@ -121,7 +122,7 @@ def load_pdf(
             "upload_session_id": upload_session_id,
         }
         Supabase_api.supabase_post_request(supabase_client, [cost_upload], "lease_documents")
-
+        print("Success")
     except Exception as e:
         uploadError(e, job_status, supabase_client, job_id, bucket_name, get_pdf)
         
