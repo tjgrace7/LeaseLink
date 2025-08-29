@@ -138,7 +138,7 @@ def export_lease(job_id, lease_request):
             lease_request.get("company_id"),
             collectionName,
             # pass only primitives; page workers will re-init their own clients from keys
-            OPENAI_API_KEY,
+            OpenAIclient,
             qdrant_client,
             supabase_client,  # safe to use only in parent process
             job_id,

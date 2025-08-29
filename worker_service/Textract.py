@@ -4,8 +4,8 @@ from dotenv import load_dotenv, find_dotenv
 from datetime import datetime
 from PyPDF2 import PdfReader
 from io import BytesIO
-from qdrant_client import QdrantClient
 from qdrant_client.models import Distance, VectorParams, PointStruct
+from common.cleanup_utils import Clear_Uploads
 
 # your embedding module
 import embed_files
@@ -315,10 +315,11 @@ def runTextract(
     unit_id: str,
     upload_session_id: str,
     company_id: str,
-    chunk_class: str,
     # embedding client
     embedding_client,
-    qdrant_client
+    qdrant_client, 
+    bucket,
+    jobid
 ):
     """
     pdf: either bytes or path
@@ -367,7 +368,9 @@ def runTextract(
 
     except botocore.exceptions.ClientError as e:
         print("AWS ClientError:", e.response.get("Error", {}))
+        Clear_Uploads(bucket=bucket, job_id=jobid, job_status='error')
         raise
     except Exception as e:
         print("Failed:", e)
+        Clear_Uploads(bucket=bucket, job_id=jobid, job_status='error')
         raise

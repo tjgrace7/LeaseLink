@@ -2,11 +2,10 @@ from dotenv import load_dotenv
 from . import claude_extractor
 import json
 import uuid
-import os
-from . import lease_chunker
 import common.Supabase_api as Supabase_api
 from common.cleanup_utils import Clear_Uploads
-import Textract
+
+from . import Textract
 
 def load_pdf(
     auth_id: str,
@@ -18,7 +17,7 @@ def load_pdf(
     bucket_name: str,
     company_id: str,
     collectionName: str,
-    openai_api_key: str,          # ✅ pass API key (string), not a client
+    OpenAI,          # ✅ pass API key (string), not a client
     qdrant_client,                # parent-only client (safe)
     supabase_client,              # parent-only client (safe)
     job_id: str,
@@ -47,7 +46,7 @@ def load_pdf(
             pdf_file, claude_client, supabase_client, claude_model, verbose=True
         )
         if extracted_lease_data is None:
-            uploadError("No Extraction Data")
+            uploadError("No Extraction Data", job_status, supabase_client, job_id, bucket_name, get_pdf)
             return
         # Normalize to dict
         lease_data = (
@@ -88,28 +87,22 @@ def load_pdf(
         print("Success")
         print("Starting PDF text extraction + embedding")
 
-        # 3) Per-page extraction + embeddings (process pool inside lease_chunker)
-        #    NOTE: we pass openai_api_key (string). The child process creates its own client.
-        source_doc_name = os.path.basename(get_pdf)
 
-        total_embedding_cost = lease_chunker.extract_text_from_pdf(
-            pdf=pdf_file,
-            openai_api_key=openai_api_key,          # ✅ string, not client
-            tenantid=tenantid,
-            propertymanagerid=auth_id,              # you previously passed auth_id here; keeping same mapping
-            propertyid=propertyid,
-            unit_id=unit_id,
-            upload_session_id=upload_session_id,
-            source_doc_name=source_doc_name,
-            company_id=company_id,
-            job_id=job_id,
+
+        total_embedding_cost = Textract.runTextract(
+             pdf=pdf_file,
+             file_path=get_pdf,
+             tenantid=tenantid,
+             propertymanagerid=auth_id,
+             propertyid=propertyid,
+             unit_id=unit_id,
+             upload_session_id=upload_session_id,
+             company_id=company_id, 
+             embedding_client=OpenAI,
+            qdrant_client=qdrant_client,
             bucket=bucket_name,
-            file_path=get_pdf,                      # full storage path
-            qdrant_client=qdrant_client,            # parent client; upserts happen in parent
-            job_status=job_status,
-            collectionName=collectionName,
-            total_pages=total_pages,
-        )
+            jobid=job_id
+             )
 
         # Status bookkeeping
         job_status["status"] = "success"
@@ -130,10 +123,10 @@ def load_pdf(
         Supabase_api.supabase_post_request(supabase_client, [cost_upload], "lease_documents")
 
     except Exception as e:
-        uploadError(e)
+        uploadError(e, job_status, supabase_client, job_id, bucket_name, get_pdf)
         
 
-def uploadError(e):
+def uploadError(e, job_status, supabase_client, job_id, bucket_name, get_pdf):
         print(f"GPT extraction or supabase insert failed: {e}")
         job_status["status"] = "error"
         # reflect error to job status table
