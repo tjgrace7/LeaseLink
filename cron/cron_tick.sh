@@ -7,7 +7,7 @@ if [[ -z "${CRON_SECRET:-}" ]]; then
 fi
 
 # Replace with your actual domain
-API_BASE="https://leaselink.onrender.com"
+API_BASE="https://leaselink-1.onrender.com"
 
 echo "[cron] POST $API_BASE/internal/cron/tick"
 curl -sS -X POST \
