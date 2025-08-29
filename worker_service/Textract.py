@@ -242,7 +242,7 @@ def embed_and_upsert_to_qdrant(
 
         # Call your embedding function. Prefer 3-tuple (vector, payload, cost)
         try:
-            vector_data, payload_from_embed, embeddingcost = embed_files.EmbedFiles(
+            vector_data, embeddingcost = embed_files.EmbedFiles(
                 client,
                 chunk_text,
                 tenantid,
@@ -283,13 +283,9 @@ def embed_and_upsert_to_qdrant(
 
         # We DO NOT modify your payload — we trust EmbedFiles to set it up correctly.
         prepared_points.append(
-            PointStruct(
-                id=str(uuid.uuid4()),
-                vector=vector_data,
-                payload=payload_from_embed,
-            )
+            vector_data
         )
-
+        print(prepared_points)
         # Batch upserts for performance
         if len(prepared_points) >= 100:
             upsert_points(collection, prepared_points, qdrant_client)
