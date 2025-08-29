@@ -221,7 +221,6 @@ def embed_and_upsert_to_qdrant(
     unit_id: str,
     upload_session_id: str,
     company_id: str,
-    chunk_class: str,
     source_doc_name: str,
     qdrant_client,
     collection: str = QDRANT_COLLECTION,
@@ -255,7 +254,7 @@ def embed_and_upsert_to_qdrant(
                 source_doc_name,
                 chunk_index,
                 company_id,
-                chunk_class,
+
             )
         except ValueError:
             # Support legacy 2-tuple (vector, cost)
@@ -271,7 +270,6 @@ def embed_and_upsert_to_qdrant(
                 source_doc_name,
                 chunk_index,
                 company_id,
-                chunk_class,
             )
             payload_from_embed = {}
 
