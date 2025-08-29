@@ -39,14 +39,14 @@ claude_model = "claude-sonnet-4-20250514"
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://www.leaselink.ai"],
+    allow_origins=["https://www.leaselink.ai"],  # add localhost if needed
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
 # --------------------------- Globals ----------------------------------
-job_status = {}  # { job_id: {status, error, result} }
+job_status = {}  # { job_id: {status, error, result, ...} }
 
 load_dotenv()
 EDGE_SECRET = os.getenv("PYTHON_EDGE_SECRET")
@@ -68,9 +68,11 @@ qdrant_client = QdrantClient(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDR
 supabase_client = Supabase_api.supabase_client_setup()
 
 # Queue / Workers
-MAX_WORKERS = int(os.getenv("LEASELINK_MAX_JOB_WORKERS", "4"))         # threads consuming the queue
-BACKLOG_TARGET = int(os.getenv("LEASELINK_QUEUE_BACKLOG", "1"))        # keep queue warm up to this size
+MAX_WORKERS = int(os.getenv("LEASELINK_MAX_JOB_WORKERS", "4"))   # number of threads
+BACKLOG_TARGET = int(os.getenv("LEASELINK_QUEUE_BACKLOG", "4"))  # try to keep queue this full
+JOB_CLAIM_BATCH = int(os.getenv("LEASELINK_JOB_CLAIM_BATCH", "4"))  # how many to claim per RPC
 job_queue = Queue()
+
 
 # --------------------------- Helpers ----------------------------------
 def verify_supabase_jwt(token: str):
@@ -83,14 +85,102 @@ def verify_supabase_jwt(token: str):
     )
     return payload
 
+
+def enqueue_next_pending_job(limit: int = JOB_CLAIM_BATCH) -> int:
+    """
+    Claims up to `limit` jobs via Supabase RPC and enqueues them.
+    Returns the number of jobs enqueued.
+    """
+    try:
+        claim = supabase_client.rpc("claim_next_upload_job", {"job_limit": limit}).execute()
+        raw = getattr(claim, "data", None)
+        if not raw:
+            return 0
+
+        # The RPC returns JSON array. SDK usually deserializes to a list of dicts.
+        jobs = raw if isinstance(raw, list) else [raw]
+        if not jobs:
+            return 0
+
+        count = 0
+        for job in jobs:
+            job_id = job.get("job_id")
+            lease_id = job.get("lease_id")
+            if not job_id or not lease_id:
+                log.warning(f"Skipping invalid job payload: {job}")
+                continue
+
+            # Fetch lease row to get file path & join metadata
+            lease_resp = (
+                supabase_client
+                .table("lease_documents")
+                .select("*")
+                .eq("lease_id", lease_id)
+                .single()
+                .execute()
+            )
+            lease_row = lease_resp.data
+            if not lease_row:
+                log.error(f"Lease not found for lease_id={lease_id}")
+                continue
+
+            file_path = lease_row.get("lease_file_path")
+            if not file_path:
+                log.error(f"Missing file_path on lease {lease_id}")
+                continue
+
+            payload = {
+                "job_id": job_id,
+                "lease_request": {
+                    "lease_document_id": lease_id,
+                    "tenant_id": lease_row.get("tenant_id"),
+                    "file_path": file_path,
+                    "user_id": lease_row.get("created_by"),
+                    "property_id": lease_row.get("property_id"),
+                    "unit_id": lease_row.get("unit_id"),
+                    "bucket": "lease-docs",
+                    "company_id": lease_row.get("company_id"),
+                }
+            }
+
+            job_status[job_id] = {
+                "status": "queued",
+                "error": None,
+                "result": None,
+                "queued_at": datetime.now(timezone.utc).isoformat(),
+            }
+            job_queue.put_nowait(payload)
+            count += 1
+
+            # reflect "queued" in Upload_Job_Status
+            try:
+                (
+                    supabase_client
+                    .table("Upload_Job_Status")
+                    .update({"job_info": job_status[job_id]})
+                    .eq("job_id", job_id)
+                    .execute()
+                )
+            except Exception as e:
+                log.warning(f"Failed to write queued status for {job_id}: {e}")
+
+        return count
+
+    except Exception as e:
+        log.error(f"enqueue_next_pending_job error: {e}\n{traceback.format_exc()}")
+        return 0
+
+
 def export_lease(job_id, lease_request):
     """
     Thin wrapper that calls upload_lease_manager.load_pdf().
     Internal page work remains parallelized within your worker_service.
     """
     try:
+        now_iso = datetime.now(timezone.utc).isoformat()
         job_status[job_id]["status"] = "in_progress"
-        print("Start LeaseLink")
+        job_status[job_id]["started_at"] = now_iso
+        print(f"[{job_id}] Start LeaseLink")
 
         upload_lease_manager.load_pdf(
             lease_request.get("user_id"),
@@ -114,84 +204,14 @@ def export_lease(job_id, lease_request):
     except Exception as e:
         bucket = lease_request.get("bucket")
         file_path = lease_request.get("file_path")
-        upload_lease_manager.Clear_Uploads(job_id, bucket, file_path, job_status[job_id])
-        print(f"Error processing job {job_id}: {e}")
+        # best-effort cleanup if the job crashed after S3/Storage writes
+        try:
+            upload_lease_manager.Clear_Uploads(job_id, bucket, file_path, job_status[job_id])
+        except Exception:
+            pass
+        print(f"[{job_id}] Error processing job: {e}")
         raise
 
-def enqueue_next_pending_job(limit=4) -> int:
-    """
-    Claims up to `limit` jobs via Supabase RPC and enqueues them.
-    Returns the number of jobs enqueued.
-    """
-    try:
-        # Call your updated RPC that supports a "job_limit" argument
-        claim = supabase_client.rpc("claim_next_upload_job", {"job_limit": limit}).execute()
-        jobs = claim.data or []
-        if not jobs:
-            return 0
-
-        count = 0
-        for job in jobs:
-            job_id = job.get("job_id")
-            lease_id = job.get("lease_id")
-            if not job_id or not lease_id:
-                log.warning(f"Skipping invalid job payload: {job}")
-                continue
-
-            # Fetch the lease row
-            lease_resp = (
-                supabase_client
-                .table("lease_documents")
-                .select("*")
-                .eq("lease_id", lease_id)
-                .single()
-                .execute()
-            )
-            lease_row = lease_resp.data
-            if not lease_row:
-                log.error(f"Lease not found for lease_id={lease_id}")
-                continue
-
-            file_path = lease_row.get("lease_file_path")
-            if not file_path:
-                log.error("Missing file_path on lease")
-                continue
-
-            payload = {
-                "job_id": job_id,
-                "lease_request": {
-                    "lease_document_id": lease_id,
-                    "tenant_id": lease_row.get("tenant_id"),
-                    "file_path": file_path,
-                    "user_id": lease_row.get("created_by"),
-                    "property_id": lease_row.get("property_id"),
-                    "unit_id": lease_row.get("unit_id"),
-                    "bucket": "lease-docs",
-                    "company_id": lease_row.get("company_id"),
-                }
-            }
-
-            job_status[job_id] = {"status": "queued", "error": None, "result": None}
-            job_queue.put_nowait(payload)
-            count += 1
-
-            # reflect "queued" in Upload_Job_Status
-            try:
-                (
-                    supabase_client
-                    .table("Upload_Job_Status")
-                    .update({"job_info": job_status[job_id]})
-                    .eq("job_id", job_id)
-                    .execute()
-                )
-            except Exception as e:
-                log.warning(f"Failed to write queued status for {job_id}: {e}")
-
-        return count
-
-    except Exception as e:
-        log.error(f"enqueue_next_pending_job error: {e}\n{traceback.format_exc()}")
-        return 0
 
 def job_worker():
     while True:
@@ -202,7 +222,6 @@ def job_worker():
 
             job_id = item.get("job_id")
             lease_request = item.get("lease_request") or {}
-
             if not job_id:
                 raise ValueError("Missing job_id in queue item")
             if not lease_request:
@@ -232,6 +251,19 @@ def job_worker():
                 pass
 
         finally:
+            # stamp elapsed_seconds / finished_at
+            try:
+                st = job_status[item.get("job_id")].get("started_at")
+                if st:
+                    started = datetime.fromisoformat(st.replace("Z", "+00:00"))
+                    if started.tzinfo is None:
+                        started = started.replace(tzinfo=timezone.utc)
+                    elapsed = (datetime.now(timezone.utc) - started).total_seconds()
+                    job_status[item.get("job_id")]["elapsed_seconds"] = elapsed
+                job_status[item.get("job_id")]["finished_at"] = datetime.now(timezone.utc).isoformat()
+            except Exception:
+                pass
+
             # reflect status for this job
             try:
                 supabase_client.table("Upload_Job_Status").update(
@@ -242,39 +274,42 @@ def job_worker():
 
             job_queue.task_done()
 
-            # 🔁 Auto-refill the queue from Supabase if we have room
+            # 🔁 Auto-refill the queue up to a small warm target
             try:
-                while job_queue.qsize() < BACKLOG_TARGET:
-                    added = enqueue_next_pending_job()
+                target = min(BACKLOG_TARGET, MAX_WORKERS)
+                while job_queue.qsize() < target:
+                    added = enqueue_next_pending_job(limit=target - job_queue.qsize())
                     if not added:
-                        break  # nothing pending
+                        break
             except Exception as e:
                 log.warning(f"Auto-refill failed: {e}")
+
 
 # start workers
 for _ in range(MAX_WORKERS):
     t = threading.Thread(target=job_worker, daemon=True)
     t.start()
 
+
 # ---------------------- Global exception/signal hooks -----------------
 def handle_exception(exc_type, exc_value, exc_traceback):
     if issubclass(exc_type, KeyboardInterrupt):
         return
     print("Unhandled Exception:", "".join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
-
 sys.excepthook = handle_exception
 
 def signal_handler(sig, frame):
     print(f"Received Signal: {sig}")
     sys.exit(0)
-
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
+
 
 # ------------------------------ Routes --------------------------------
 @app.get("/")
 def root():
     return {"message": "API is running"}
+
 
 @app.head("/")
 @app.get("/job-status/{job_id}")
@@ -284,6 +319,7 @@ def get_job_status(job_id: str):
         return {"Status": "unknown"}
     return status
 
+
 @app.post("/internal/cron/tick")
 def cron_tick(x_cron_secret: str = Header(default="")):
     try:
@@ -291,7 +327,7 @@ def cron_tick(x_cron_secret: str = Header(default="")):
         if x_cron_secret != CRON_SECRET:
             raise HTTPException(status_code=401, detail="Unauthorized")
 
-        # 2) Throttle if a job is already processing recently
+        # 2) Throttle if system already busy (rough count)
         fifteen_min_ago = (datetime.now(timezone.utc) - timedelta(minutes=15)).strftime("%Y-%m-%dT%H:%M:%SZ")
         busy_resp = (
             supabase_client
@@ -299,20 +335,26 @@ def cron_tick(x_cron_secret: str = Header(default="")):
             .select("job_id, job_info, updated_at")
             .in_("job_info->>status", ["processing", "in_progress", "extracted"])
             .gte("updated_at", fifteen_min_ago)
-            .order("updated_at", desc=True)
-            .limit(1)
+            .limit(100)
             .execute()
         )
-        busy_count = getattr(busy_resp, "count", None) or (len(busy_resp.data or []) if getattr(busy_resp, "data", None) else 0)
-        if busy_count > 4:
+        busy_count = len(busy_resp.data or [])
+        if busy_count >= MAX_WORKERS:
             return {"ok": True, "skipped": "processing in progress", "busy_count": busy_count}
 
-        # 3) Try to enqueue ONE pending job
-        enqueued = enqueue_next_pending_job()
-        if not enqueued:
+        # 3) Fill queue up to BACKLOG_TARGET (don’t exceed workers)
+        enqueued_total = 0
+        target = min(BACKLOG_TARGET, MAX_WORKERS)
+        while job_queue.qsize() < target:
+            added = enqueue_next_pending_job(limit=min(JOB_CLAIM_BATCH, target - job_queue.qsize()))
+            if not added:
+                break
+            enqueued_total += added
+
+        if enqueued_total == 0:
             return {"ok": True, "no_pending": True}
 
-        return JSONResponse({"ok": True, "enqueued": True}, status_code=200)
+        return JSONResponse({"ok": True, "enqueued": enqueued_total}, status_code=200)
 
     except HTTPException:
         log.error("HTTPException in cron_tick:\n%s", traceback.format_exc())
@@ -320,6 +362,7 @@ def cron_tick(x_cron_secret: str = Header(default="")):
     except Exception as e:
         log.error("Unhandled exception in cron_tick: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
+
 
 @app.post("/process-lease")
 async def process_file(request: Request, authorization: Optional[str] = Header(default=None)):
@@ -336,7 +379,7 @@ async def process_file(request: Request, authorization: Optional[str] = Header(d
     if not file_path:
         raise HTTPException(status_code=400, detail="Missing file_path")
 
-    print(f"[{job_id}] Creating thread")
+    print(f"[{job_id}] Enqueue job")
     try:
         # enqueue as dict (NOT tuple) to match worker expectations
         job_queue.put_nowait({
@@ -371,6 +414,7 @@ async def process_file(request: Request, authorization: Optional[str] = Header(d
 
     return {"status": job_status[job_id], "job_id": job_id}
 
+
 @app.post("/entity_questions")
 async def tenant_send_message(
     request: Request,
@@ -400,6 +444,7 @@ async def tenant_send_message(
 
     return {"status": "Message is being processed"}
 
+
 def handle_entity_question(message_request, supabase_client, qdrant_client, OpenAIclient, collectionName):
     try:
         auth_id = message_request.get("auth_id")
@@ -427,7 +472,8 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
         oldmessages = Supabase_api.message_get_request(supabase_client, session_id, "entity_questions")
 
         final_message, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data = Qdrant_ChatGPT.get_relevant_chunks(
-            collectionName, qdrant_client, filtertype, entity_id, company_id, message, OpenAIclient, claude_client, oldmessages, supabase_client, claude_model
+            collectionName, qdrant_client, filtertype, entity_id, company_id, message,
+            OpenAIclient, claude_client, oldmessages, supabase_client, claude_model
         )
 
         if final_message:
@@ -462,9 +508,10 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
             ).execute()
             print("Message successfully processed.")
         else:
-            print("GPT returned None.")
+            print("LLM returned None.")
     except Exception as e:
         print("Error in threaded message handler:", e)
+
 
 # ------------------------------ Main ----------------------------------
 if __name__ == "__main__":
