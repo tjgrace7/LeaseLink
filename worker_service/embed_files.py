@@ -15,7 +15,6 @@ def EmbedFiles(
     sourcedocname,
     chunkindex,
     company_id,
-    chunk_class
 ):
     tenantid = tenantid or ""
 
