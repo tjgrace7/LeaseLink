@@ -8,7 +8,7 @@ from qdrant_client.models import Distance, VectorParams, PointStruct
 from common.cleanup_utils import Clear_Uploads
 
 # your embedding module
-import embed_files
+from . import embed_files
 
 load_dotenv(find_dotenv())
 
