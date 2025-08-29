@@ -15,7 +15,6 @@ def EmbedFiles(
     sourcedocname,
     chunkindex,
     company_id,
-    chunk_class
 ):
     tenantid = tenantid or ""
 
@@ -57,7 +56,6 @@ def EmbedFiles(
                 "source_id": f"{upload_session_id}_{tenantid}_{sourcedocname}_{pagenumber}_{chunkindex}",
                 "managementcompany_id": company_id,
                 "highlight_id": str(uuid4()),
-                "embedding_class": chunk_class,
             },
         )
         return point, float(embedding_cost)
