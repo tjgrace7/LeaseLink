@@ -20,14 +20,10 @@ AWS_ACCESS_KEY_ID     = os.getenv("AWS_ACCESS_KEY_ID")
 AWS_SECRET_ACCESS_KEY = os.getenv("AWS_SECRET_ACCESS_KEY")
 AWS_REGION            = os.getenv("AWS_REGION", "us-east-1")
 
-# Used only for Textract async (S3-backed) jobs
 S3_BUCKET = os.getenv("TEXTRACT_S3_BUCKET", "leaselinkleases")
 
-# How large a chunk can be (characters) before we split it
+# Optional: max characters per chunk (post-section split)
 MAX_CHARS_PER_CHUNK = 4000  # set None to disable
-
-# Upsert to Qdrant in batches (each chunk is still an individual point/payload)
-UPSERT_BATCH_SIZE = 64
 
 # ----------------------------- CHUNKING -------------------------------
 section_regex = re.compile(
@@ -52,7 +48,7 @@ def chunk_text_by_sections(text: str) -> List[str]:
             current.append(stripped)
     if current:
         chunks.append("\n".join(current))
-    return chunks
+    return [c for c in chunks if c.strip()]
 
 def split_long_chunk(c: str, limit: int) -> List[str]:
     if not limit or len(c) <= limit:
@@ -102,9 +98,7 @@ def start_text_job(pdf_bytes: bytes, filename: str) -> Dict[str, Any]:
         return {"mode": "sync", "blocks": blocks, "pages": total_pages}
 
     # async path
-    key = filename
-    if not key.lower().endswith(".pdf"):
-        key = f"{key}.pdf"
+    key = filename if filename.lower().endswith(".pdf") else f"{filename}.pdf"
 
     s3 = s3_client()
     s3.put_object(
@@ -157,77 +151,33 @@ def build_pages_text_from_lines(blocks: List[Dict[str,Any]]) -> List[str]:
                 pages.setdefault(p, []).append(txt)
     return ["\n".join(pages[p]) for p in sorted(pages.keys())]
 
-# ----------------------------- OCR -> CHUNKS --------------------------
-def run_ocr_and_chunk(pdf_bytes: bytes, filename: str) -> Dict[str, Any]:
-    """
-    Returns chunk metadata only. (No embedding or upsert here.)
-    """
-    t0 = datetime.now()
-
-    start = start_text_job(pdf_bytes, filename)
-    if start["mode"] == "sync":
-        status = "SUCCEEDED"
-        blocks = start["blocks"]
-        total_pages = start["pages"]
-    else:
-        status = wait_for_text_job(start["job_id"])
-        blocks = fetch_all_text_blocks(start["job_id"])
-        total_pages = start["pages"]
-
-    pages_text = build_pages_text_from_lines(blocks)
-
-    chunk_records: List[Dict[str, Any]] = []
-    total_chunks = 0
-
-    for page_num, page_text in enumerate(pages_text, start=1):
-        # 1) Split by section-ish headings
-        sections = chunk_text_by_sections(page_text)
-        # 2) Split long sections by char limit
-        final_chunks: List[str] = []
-        for c in sections:
-            final_chunks.extend(split_long_chunk(c, MAX_CHARS_PER_CHUNK))
-
-        for chunk_index, c in enumerate(final_chunks):
-            chunk_records.append({
-                "page": page_num,
-                "chunk_index": chunk_index,
-                "text": c
-            })
-        total_chunks += len(final_chunks)
-
-    elapsed = (datetime.now() - t0).total_seconds()
-    print(f"OCR+Chunking: {total_chunks} chunks across {total_pages} pages in {elapsed:.2f}s")
-
-    return {
-        "job_status": status,
-        "pages_count": total_pages,
-        "pages_text_preview": [p[:300] for p in pages_text[:3]],
-        "chunks": chunk_records,
-        "chunks_count": total_chunks,
-        "elapsed_seconds": elapsed,
-    }
-
 # ----------------------------- QDRANT HELPERS -------------------------
 def ensure_collection_exists(collection: str, vector_size: int, qdrant_client) -> None:
     try:
         qdrant_client.get_collection(collection_name=collection)
     except Exception:
-        # Create if missing
         qdrant_client.recreate_collection(
             collection_name=collection,
             vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
         )
         # Add payload indexes here if desired.
 
-def upsert_points(collection: str, points: List[PointStruct], qdrant_client) -> None:
-    if points:
-        qdrant_client.upsert(collection_name=collection, points=points)
+def upsert_point(collection: str, point: PointStruct, qdrant_client) -> None:
+    if point:
+        qdrant_client.upsert(collection_name=collection, points=[point])
 
-# ----------------------------- EMBED + UPSERT (BATCHED) ---------------
-def embed_chunks_and_upsert(
-    chunks: List[Dict[str, Any]],
+# ----------------------------- EMBED + UPSERT (ONE-AT-A-TIME) ---------
+def _to_vec_list(v) -> List[float]:
+    if isinstance(v, PointStruct):
+        return list(v.vector or [])
+    return list(v or [])
+
+def embed_one_chunk_and_upsert(
     *,
     embedding_client,
+    chunk_text: str,
+    page_number: int,
+    chunk_index: int,
     tenantid: str,
     propertymanagerid: str,
     propertyid: str,
@@ -236,158 +186,62 @@ def embed_chunks_and_upsert(
     company_id: str,
     source_doc_name: str,
     qdrant_client,
-    collection: str = QDRANT_COLLECTION,
-    upsert_batch_size: int = UPSERT_BATCH_SIZE
-) -> Tuple[int, float]:
+    collection: str,
+    ensure_collection_once: Dict[str, Any],
+) -> float:
     """
-    Embeds chunks and upserts them to Qdrant in batches. Each chunk is still
-    a separate point with its own payload.
-
-    Returns:
-        (inserted_points_count, total_embedding_cost)
+    Embeds a single chunk and immediately upserts it as its own point/payload.
+    Returns the embedding cost for this chunk.
     """
-    total_cost = 0.0
-    inserted = 0
-    collection_ready = False
 
-    batch_points: List[PointStruct] = []
+    # Preferred signature: returns (PointStruct, cost). Legacy: (vector_list, cost)
+    vec_or_point, embeddingcost = embed_files.EmbedFiles(
+        embedding_client,
+        chunk_text,
+        tenantid,
+        propertymanagerid,
+        propertyid,
+        unit_id,
+        upload_session_id,
+        page_number,              # 1-based page
+        source_doc_name,
+        chunk_index,
+        company_id,
+    )
 
-    def _as_vector_list(v) -> List[float]:
-        if isinstance(v, PointStruct):
-            return list(v.vector or [])
-        return list(v or [])
-
-    for ch in chunks:
-        page_number = int(ch["page"])
-        chunk_index = int(ch["chunk_index"])
-        chunk_text  = ch["text"]
-
-        # Preferred signature: returns (PointStruct, cost)
-        try:
-            vector_data, embeddingcost = embed_files.EmbedFiles(
-                embedding_client,
-                chunk_text,
-                tenantid,
-                propertymanagerid,
-                propertyid,
-                unit_id,
-                upload_session_id,
-                page_number,              # 1-based page
-                source_doc_name,
-                chunk_index,
-                company_id,
-            )
-            if isinstance(vector_data, PointStruct):
-                point = vector_data
-                # ensure it has an id (defensive)
-                if not getattr(point, "id", None):
-                    point.id = str(uuid.uuid4())
-            else:
-                # Legacy: returns a raw vector
-                vec_list = _as_vector_list(vector_data)
-                if not vec_list:
-                    raise ValueError("Embedding returned empty vector (legacy path).")
-                point = PointStruct(
-                    id=str(uuid.uuid4()),
-                    vector=vec_list,
-                    payload={
-                        "tenantid": tenantid,
-                        "propertymanagerid": propertymanagerid,
-                        "propertyid": propertyid,
-                        "unitid": unit_id,
-                        "upload_session_id": upload_session_id,
-                        "company_id": company_id,
-                        "pageNumber": page_number,
-                        "chunk_index": chunk_index,
-                        "source_doc": source_doc_name,
-                        "created_at": datetime.utcnow().isoformat() + "Z",
-                    },
-                )
-        except ValueError:
-            # If your EmbedFiles uses ValueError to signal legacy tuple, fall back cleanly
-            raw_vec, embeddingcost = embed_files.EmbedFiles(
-                embedding_client,
-                chunk_text,
-                tenantid,
-                propertymanagerid,
-                propertyid,
-                unit_id,
-                upload_session_id,
-                page_number,
-                source_doc_name,
-                chunk_index,
-                company_id,
-            )
-            vec_list = _as_vector_list(raw_vec)
-            if not vec_list:
-                raise ValueError("Embedding returned empty vector (legacy path).")
-            point = PointStruct(
-                id=str(uuid.uuid4()),
-                vector=vec_list,
-                payload={
-                    "tenantid": tenantid,
-                    "propertymanagerid": propertymanagerid,
-                    "propertyid": propertyid,
-                    "unitid": unit_id,
-                    "upload_session_id": upload_session_id,
-                    "company_id": company_id,
-                    "pageNumber": page_number,
-                    "chunk_index": chunk_index,
-                    "source_doc": source_doc_name,
-                    "created_at": datetime.utcnow().isoformat() + "Z",
-                },
-            )
-
-        total_cost += float(embeddingcost or 0.0)
-
-        # Ensure collection exists once we know vector length
-        if not collection_ready:
-            vec_len = len(_as_vector_list(point))
-            if vec_len <= 0:
-                raise ValueError("Embedding returned empty vector.")
+    if isinstance(vec_or_point, PointStruct):
+        point = vec_or_point
+        vec_len = len(_to_vec_list(point))
+        # Ensure collection exists once
+        if not ensure_collection_once.get("done"):
             ensure_collection_exists(collection, vec_len, qdrant_client)
-            collection_ready = True
+            ensure_collection_once["done"] = True
+        # Immediate upsert: ONE chunk
+       
+        return float(embeddingcost or 0.0), point
 
-        # Add to batch (each point is a separate chunk/payload)
-        batch_points.append(point)
-
-        # Flush if batch full
-        if len(batch_points) >= upsert_batch_size:
-            upsert_points(collection, batch_points, qdrant_client)
-            inserted += len(batch_points)
-            batch_points.clear()
-
-    # Flush remainder
-    if batch_points:
-        upsert_points(collection, batch_points, qdrant_client)
-        inserted += len(batch_points)
-        batch_points.clear()
-
-    return inserted, total_cost
-
-# ----------------------------- MAIN -----------------------------------
+# ----------------------------- OCR -> CHUNKS -> PER-CHUNK UPSERT ------
 def runTextract(
     pdf: bytes | str,
     file_path: str,
     *,
-    # ids passed through to EmbedFiles (and mirrored in payload)
     tenantid: str,
     propertymanagerid: str,
     propertyid: str,
     unit_id: str,
     upload_session_id: str,
     company_id: str,
-    # clients
     embedding_client,
     qdrant_client,
     bucket,
     jobid
 ):
     """
-    pdf: either bytes or path
-    file_path: original path/name of the PDF; used as source_doc_name and for S3 async path
+    pdf: either bytes or a local path.
+    file_path: used as source_doc_name and for S3 async naming.
     """
     try:
+        # --- Load bytes
         if isinstance(pdf, (bytes, bytearray)):
             pdf_bytes = bytes(pdf)
             filename = file_path
@@ -396,36 +250,60 @@ def runTextract(
             with open(pdf, "rb") as f:
                 pdf_bytes = f.read()
 
-        # 1) OCR + chunk (no embedding here)
-        ocr = run_ocr_and_chunk(pdf_bytes, filename)
-        chunks = ocr["chunks"]
+        # --- OCR
+        start = start_text_job(pdf_bytes, filename)
+        if start["mode"] == "sync":
+            status = "SUCCEEDED"
+            blocks = start["blocks"]
+            total_pages = start["pages"]
+        else:
+            status = wait_for_text_job(start["job_id"])
+            blocks = fetch_all_text_blocks(start["job_id"])
+            total_pages = start["pages"]
 
-        # 2) Embed + batched upsert (each chunk = separate point/payload)
-        inserted, emb_cost = embed_chunks_and_upsert(
-            chunks,
-            embedding_client=embedding_client,
-            tenantid=tenantid,
-            propertymanagerid=propertymanagerid,
-            propertyid=propertyid,
-            unit_id=unit_id,
-            upload_session_id=upload_session_id,
-            company_id=company_id,
-            source_doc_name=file_path,
-            qdrant_client=qdrant_client,
-            collection=QDRANT_COLLECTION,
-            upsert_batch_size=UPSERT_BATCH_SIZE,
-        )
+        # --- Build page-wise text
+        pages_text = build_pages_text_from_lines(blocks)
 
-        result = {
-            "ocr_status": ocr["job_status"],
-            "pages_count": ocr["pages_count"],
-            "chunks_count": ocr["chunks_count"],
-            "embedding_cost": emb_cost,
-            "upserted_points": inserted,
-            "collection": QDRANT_COLLECTION,
-        }
-        print(json.dumps(result, indent=2))
-        return result
+        # --- Chunk per page, and IMMEDIATELY embed + upsert ONE AT A TIME
+        ensure_once = {"done": False}
+        total_chunks = 0
+        total_cost = 0.0
+        points = []
+        for page_num, page_text in enumerate(pages_text, start=1):
+            sections = chunk_text_by_sections(page_text)
+            final_chunks: List[str] = []
+            for c in sections if sections else [page_text]:
+                final_chunks.extend(split_long_chunk(c, MAX_CHARS_PER_CHUNK))
+
+            for chunk_index, c in enumerate(final_chunks):
+                cost, point = embed_one_chunk_and_upsert(
+                    embedding_client=embedding_client,
+                    chunk_text=c,
+                    page_number=page_num,
+                    chunk_index=chunk_index,
+                    tenantid=tenantid,
+                    propertymanagerid=propertymanagerid,
+                    propertyid=propertyid,
+                    unit_id=unit_id,
+                    upload_session_id=upload_session_id,
+                    company_id=company_id,
+                    source_doc_name=file_path,
+                    qdrant_client=qdrant_client,
+                    collection=QDRANT_COLLECTION,
+                    ensure_collection_once=ensure_once,
+                )
+                total_cost += cost
+                total_chunks += 1
+                points.append(point)
+                if total_chunks >=20:
+                    total_chunks = 0
+                    for point in points:
+                        upsert_point(QDRANT_COLLECTION, point, qdrant_client)
+        if total_chunks > 0:
+            for point in points:
+                upsert_point(QDRANT_COLLECTION, point, qdrant_client)
+        print("Success")
+        return total_cost
 
     except botocore.exceptions.ClientError as e:
         print("AWS ClientError:", e.response.get("Error", {}))
@@ -433,7 +311,6 @@ def runTextract(
         raise
     except Exception as e:
         print("Failed:", e)
-        # include file_path when available
         try:
             Clear_Uploads(bucket=bucket, job_id=jobid, file_path=file_path, job_status='error')
         except Exception:
