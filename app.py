@@ -68,7 +68,7 @@ qdrant_client = QdrantClient(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDR
 supabase_client = Supabase_api.supabase_client_setup()
 
 # Queue / Workers
-MAX_WORKERS = int(os.getenv("LEASELINK_MAX_JOB_WORKERS", "5"))         # threads consuming the queue
+MAX_WORKERS = int(os.getenv("LEASELINK_MAX_JOB_WORKERS", "4"))         # threads consuming the queue
 BACKLOG_TARGET = int(os.getenv("LEASELINK_QUEUE_BACKLOG", "1"))        # keep queue warm up to this size
 job_queue = Queue()
 
@@ -118,92 +118,80 @@ def export_lease(job_id, lease_request):
         print(f"Error processing job {job_id}: {e}")
         raise
 
-def enqueue_next_pending_job() -> bool:
+def enqueue_next_pending_job(limit=4) -> int:
     """
-    Claims the next job via Supabase RPC and enqueues it.
-    Returns True if a job was enqueued, False if none available.
+    Claims up to `limit` jobs via Supabase RPC and enqueues them.
+    Returns the number of jobs enqueued.
     """
     try:
-        claim = supabase_client.rpc("claim_next_upload_job").execute()
-        job = None
-        if claim and getattr(claim, "data", None):
-            job = claim.data[0] if isinstance(claim.data, list) else claim.data
+        # Call your updated RPC that supports a "job_limit" argument
+        claim = supabase_client.rpc("claim_next_upload_job", {"job_limit": limit}).execute()
+        jobs = claim.data or []
+        if not jobs:
+            return 0
 
-        if not job:
-            return False
+        count = 0
+        for job in jobs:
+            job_id = job.get("job_id")
+            lease_id = job.get("lease_id")
+            if not job_id or not lease_id:
+                log.warning(f"Skipping invalid job payload: {job}")
+                continue
 
-        job_id = job.get("job_id")
-        lease_id = job.get("lease_id")
-        if not job_id or not lease_id:
-            log.warning(f"RPC payload missing keys: {job}")
-            return False
+            # Fetch the lease row
+            lease_resp = (
+                supabase_client
+                .table("lease_documents")
+                .select("*")
+                .eq("lease_id", lease_id)
+                .single()
+                .execute()
+            )
+            lease_row = lease_resp.data
+            if not lease_row:
+                log.error(f"Lease not found for lease_id={lease_id}")
+                continue
 
-        # Fetch lease row
-        lease_resp = (
-            supabase_client
-            .table("lease_documents")
-            .select("*")
-            .eq("lease_id", lease_id)
-            .single()
-            .execute()
-        )
-        lease_row = lease_resp.data
-        if not lease_row:
-            log.error(f"Lease not found for lease_id={lease_id}")
-            return False
+            file_path = lease_row.get("lease_file_path")
+            if not file_path:
+                log.error("Missing file_path on lease")
+                continue
 
-        file_path = lease_row.get("lease_file_path")
-        if not file_path:
-            log.error("Missing file_path on lease")
-            return False
-
-        payload = {
-            "job_id": job_id,
-            "lease_request": {
-                "lease_document_id": lease_id,
-                "tenant_id": lease_row.get("tenant_id"),
-                "file_path": file_path,
-                "user_id": lease_row.get("created_by"),
-                "property_id": lease_row.get("property_id"),
-                "unit_id": lease_row.get("unit_id"),
-                "bucket": "lease-docs",
-                "company_id": lease_row.get("company_id"),
+            payload = {
+                "job_id": job_id,
+                "lease_request": {
+                    "lease_document_id": lease_id,
+                    "tenant_id": lease_row.get("tenant_id"),
+                    "file_path": file_path,
+                    "user_id": lease_row.get("created_by"),
+                    "property_id": lease_row.get("property_id"),
+                    "unit_id": lease_row.get("unit_id"),
+                    "bucket": "lease-docs",
+                    "company_id": lease_row.get("company_id"),
+                }
             }
-        }
 
-        # initialize status + enqueue
-        job_status[job_id] = {"status": "queued", "error": None, "result": None}
-        job_queue.put_nowait(payload)
+            job_status[job_id] = {"status": "queued", "error": None, "result": None}
+            job_queue.put_nowait(payload)
+            count += 1
 
-        # reflect "queued" in Upload_Job_Status
-        try:
-            (
-                supabase_client
-                .table("Upload_Job_Status")
-                .update({"job_info": job_status[job_id]})
-                .eq("job_id", job_id)
-                .execute()
-            )
-        except Exception as e:
-            log.warning(f"Failed to write queued status for {job_id}: {e}")
+            # reflect "queued" in Upload_Job_Status
+            try:
+                (
+                    supabase_client
+                    .table("Upload_Job_Status")
+                    .update({"job_info": job_status[job_id]})
+                    .eq("job_id", job_id)
+                    .execute()
+                )
+            except Exception as e:
+                log.warning(f"Failed to write queued status for {job_id}: {e}")
 
-        # optional: mark tenant unavailable
-        try:
-            (
-                supabase_client
-                .table("tenant")
-                .update({"Available": False})
-                .eq("tenant_id", lease_row.get("tenant_id"))
-                .execute()
-            )
-        except Exception as e:
-            log.warning(f"Tenant availability update failed: {e}")
-
-        return True
+        return count
 
     except Exception as e:
         log.error(f"enqueue_next_pending_job error: {e}\n{traceback.format_exc()}")
-        return False
+        return 0
 
 def job_worker():
     while True:
