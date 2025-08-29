@@ -6,6 +6,7 @@ import os
 from . import lease_chunker
 import common.Supabase_api as Supabase_api
 from common.cleanup_utils import Clear_Uploads
+import Textract
 
 def load_pdf(
     auth_id: str,
