@@ -349,7 +349,6 @@ def runTextract(
             unit_id=unit_id,
             upload_session_id=upload_session_id,
             company_id=company_id,
-            chunk_class=chunk_class,
             source_doc_name=source_doc_name,
             qdrant_client=qdrant_client,
             collection=QDRANT_COLLECTION,
@@ -372,5 +371,5 @@ def runTextract(
         raise
     except Exception as e:
         print("Failed:", e)
-        Clear_Uploads(bucket=bucket, job_id=jobid, job_status='error')
+        Clear_Uploads(bucket=bucket, job_id=jobid, file_path=file_path, job_status='error')
         raise
