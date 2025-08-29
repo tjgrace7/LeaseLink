@@ -204,7 +204,7 @@ def ensure_collection_exists(collection: str, vector_size: int, qdrant_client) -
             collection_name=collection,
             vectors_config=VectorParams(size=vector_size, distance=Distance.COSINE),
         )
-        # You can add payload indexes here if desired; omitted since payload is your shape.
+        # Add payload indexes here if desired.
 
 def upsert_points(collection: str, points: List[PointStruct], qdrant_client) -> None:
     if points:
@@ -224,23 +224,27 @@ def embed_and_upsert_to_qdrant(
     source_doc_name: str,
     qdrant_client,
     collection: str = QDRANT_COLLECTION,
-    
 ) -> Tuple[int, float]:
     """
-    Uses your EmbedFiles() which now returns the desired payload already set.
-    Expected return (preferred): (vector, payload, cost)
-    Fallback supported: (vector, cost)
+    For each chunk:
+      - call EmbedFiles (returns PointStruct + cost, or legacy (vector, cost))
+      - ensure collection exists (once) using the vector length
+      - upsert immediately (no batching)
     """
     total_cost = 0.0
-    prepared_points: List[PointStruct] = []
-    vector_size: int = 0
+    collection_ready = False
+
+    def _vec_list(v) -> List[float]:
+        if isinstance(v, PointStruct):
+            return v.vector
+        return list(v or [])
 
     for ch in chunks:
         page_number = int(ch["page"])
         chunk_index = int(ch["chunk_index"])
-        chunk_text = ch["text"]
+        chunk_text  = ch["text"]
 
-        # Call your embedding function. Prefer 3-tuple (vector, payload, cost)
+        # Prefer new signature: returns (PointStruct, cost)
         try:
             vector_data, embeddingcost = embed_files.EmbedFiles(
                 client,
@@ -250,15 +254,16 @@ def embed_and_upsert_to_qdrant(
                 propertyid,
                 unit_id,
                 upload_session_id,
-                page_number,                 # 1-based
+                page_number,              # 1-based page
                 source_doc_name,
                 chunk_index,
                 company_id,
-
             )
+            point: PointStruct | None = vector_data if isinstance(vector_data, PointStruct) else None
+
         except ValueError:
-            # Support legacy 2-tuple (vector, cost)
-            vector_data, embeddingcost = embed_files.EmbedFiles(
+            # Legacy: returns (vector_list, cost) — create PointStruct here.
+            raw_vec, embeddingcost = embed_files.EmbedFiles(
                 client,
                 chunk_text,
                 tenantid,
@@ -271,29 +276,38 @@ def embed_and_upsert_to_qdrant(
                 chunk_index,
                 company_id,
             )
-            payload_from_embed = {}
+            vec_list = _vec_list(raw_vec)
+            if not vec_list:
+                raise ValueError("Embedding returned empty vector (legacy path).")
+            point = PointStruct(
+                id=str(uuid.uuid4()),
+                vector=vec_list,
+                payload={
+                    "tenantid": tenantid,
+                    "propertymanagerid": propertymanagerid,
+                    "propertyid": propertyid,
+                    "unitid": unit_id,
+                    "upload_session_id": upload_session_id,
+                    "company_id": company_id,
+                    "pageNumber": page_number,
+                    "chunk_index": chunk_index,
+                    "source_doc": source_doc_name,
+                    "created_at": datetime.utcnow().isoformat() + "Z",
+                },
+            )
 
         total_cost += float(embeddingcost or 0.0)
 
-        if vector_size == 0:
-            vector_size = len(vector_data or [])
-            if vector_size <= 0:
+        # Ensure collection exists once we know vector length
+        if not collection_ready:
+            vec_len = len(_vec_list(point))
+            if vec_len <= 0:
                 raise ValueError("Embedding returned empty vector.")
-            ensure_collection_exists(collection, vector_size, qdrant_client)
+            ensure_collection_exists(collection, vec_len, qdrant_client)
+            collection_ready = True
 
-        # We DO NOT modify your payload — we trust EmbedFiles to set it up correctly.
-        prepared_points.append(
-            vector_data
-        )
-        print(prepared_points)
-        # Batch upserts for performance
-        if len(prepared_points) >= 100:
-            upsert_points(collection, prepared_points, qdrant_client)
-            prepared_points = []
-
-    # flush remaining
-    if prepared_points:
-        upsert_points(collection, prepared_points)
+        # IMMEDIATE UPSERT (single chunk)
+        upsert_points(collection, [point], qdrant_client)
 
     return (len(chunks), total_cost)
 
@@ -311,7 +325,7 @@ def runTextract(
     company_id: str,
     # embedding client
     embedding_client,
-    qdrant_client, 
+    qdrant_client,
     bucket,
     jobid
 ):
@@ -332,7 +346,7 @@ def runTextract(
         ocr = run_ocr_and_chunk(pdf_bytes, filename=filename)
         chunks = ocr["chunks"]
 
-        # 2) Embed + upsert (payload comes entirely from EmbedFiles)
+        # 2) Embed + upsert (payload comes entirely from EmbedFiles when PointStruct)
         source_doc_name = file_path
         inserted, emb_cost = embed_and_upsert_to_qdrant(
             embedding_client,
