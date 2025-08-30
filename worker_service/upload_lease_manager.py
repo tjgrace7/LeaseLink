@@ -129,6 +129,7 @@ def load_pdf(
         print("Duration:", duration)
         print("Success")
     except Exception as e:
+        print("Upload Error", e)
         uploadError(e, job_status, supabase_client, job_id, bucket_name, get_pdf)
         
 

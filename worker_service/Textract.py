@@ -107,18 +107,12 @@ def start_text_job(pdf_bytes: bytes, filename: str) -> Dict[str, Any]:
     If the doc is small (≤ 5 pages), run synchronous Bytes-based OCR.
     If large (> 5 pages), upload to S3 and start an async job.
     """
-    reader = PdfReader(BytesIO(pdf_bytes))
-    total_pages = len(reader.pages)
     tx = textract_client()
 
-    if total_pages <= 5:
-        resp = tx.detect_document_text(Document={"Bytes": pdf_bytes})
-        blocks = resp.get("Blocks", [])
-        return {"mode": "sync", "blocks": blocks, "pages": total_pages}
 
     # async path
     key = filename if filename.lower().endswith(".pdf") else f"{filename}.pdf"
-
+    print("Uploading to s3")
     s3 = s3_client()
     s3.put_object(
         Bucket=S3_BUCKET,
@@ -271,6 +265,7 @@ def runTextract(
                 pdf_bytes = f.read()
 
         # --- OCR
+        print("Starting OCR")
         start = start_text_job(pdf_bytes, filename)
         if start["mode"] == "sync":
             status = "SUCCEEDED"
@@ -292,6 +287,7 @@ def runTextract(
         total_chunks = 0
         total_cost = 0.0
         points = []
+
         for page_num, page_text in enumerate(pages_text, start=1):
             sections = chunk_text_by_sections(page_text)
             final_chunks: List[str] = []

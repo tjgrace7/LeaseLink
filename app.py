@@ -68,9 +68,9 @@ qdrant_client = QdrantClient(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDR
 supabase_client = Supabase_api.supabase_client_setup()
 
 # Queue / Workers
-MAX_WORKERS = int(os.getenv("LEASELINK_MAX_JOB_WORKERS", "4"))   # number of threads
-BACKLOG_TARGET = int(os.getenv("LEASELINK_QUEUE_BACKLOG", "4"))  # try to keep queue this full
-JOB_CLAIM_BATCH = int(os.getenv("LEASELINK_JOB_CLAIM_BATCH", "4"))  # how many to claim per RPC
+MAX_WORKERS = int(os.getenv("LEASELINK_MAX_JOB_WORKERS", "10"))   # number of threads
+BACKLOG_TARGET = int(os.getenv("LEASELINK_QUEUE_BACKLOG", "10"))  # try to keep queue this full
+JOB_CLAIM_BATCH = int(os.getenv("LEASELINK_JOB_CLAIM_BATCH", "10"))  # how many to claim per RPC
 job_queue = Queue()
 
 
