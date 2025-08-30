@@ -145,4 +145,4 @@ def uploadError(e, job_status, supabase_client, job_id, bucket_name, get_pdf):
             .execute()
         )
         # cleanup uploaded artifacts
-        Clear_Uploads(job_id, bucket_name, get_pdf, job_status)
+        Clear_Uploads(job_id, bucket_name, file_path=get_pdf, job_status=job_status)
