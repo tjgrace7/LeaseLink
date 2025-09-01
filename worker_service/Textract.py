@@ -108,7 +108,8 @@ def start_text_job(pdf_bytes: bytes, filename: str) -> Dict[str, Any]:
     If large (> 5 pages), upload to S3 and start an async job.
     """
     tx = textract_client()
-
+    reader = PdfReader(pdf_bytes)
+    total_pages = len(reader.pages)
 
     # async path
     key = filename if filename.lower().endswith(".pdf") else f"{filename}.pdf"
