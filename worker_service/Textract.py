@@ -103,12 +103,9 @@ def textract_client() -> Any:
 
 # ----------------------------- TEXTRACT -------------------------------
 def start_text_job(pdf_bytes: bytes, filename: str) -> Dict[str, Any]:
-    """
-    If the doc is small (≤ 5 pages), run synchronous Bytes-based OCR.
-    If large (> 5 pages), upload to S3 and start an async job.
-    """
+
     tx = textract_client()
-    reader = PdfReader(pdf_bytes)
+    reader = PdfReader(BytesIO(pdf_bytes))
     total_pages = len(reader.pages)
 
     # async path
