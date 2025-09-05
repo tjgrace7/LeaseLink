@@ -112,7 +112,7 @@ Return a **single, semantically precise** version of the user's question that wi
                 ]
             )
         )
-
+        print(len(results))
         if not results:
             raise ValueError("No results found for tenant_id/company_id.")
 
