@@ -144,7 +144,7 @@ def enqueue_next_pending_job(limit: int = JOB_CLAIM_BATCH) -> int:
             }
 
             job_status[job_id] = {
-                "status": "server queue",
+                "status": "processing",
                 "error": None,
                 "result": None,
                 "queued_at": datetime.now(timezone.utc).isoformat(),
