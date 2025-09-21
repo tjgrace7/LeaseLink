@@ -74,6 +74,7 @@ def get_auth_email(supabase, auth_id: str) -> str | None:
 
 # ---------- Your function ----------
 def CheckGroupComplete(group_id: str):
+    print(resend.api_key)
     group = sb_single(
         supabase.table("upload_groups")
         .select("id, company_id, tenantId, total_jobs, done_jobs, error_jobs, completed_at")
@@ -95,6 +96,7 @@ def CheckGroupComplete(group_id: str):
         t = sb_single(
             supabase.table("tenant").select("Tenant_Name").eq("tenant_id", group["tenant_id"])
         ) or {}
+        print(t.get("Tenant_Name"))
         tenant_name = t.get("Tenant_Name") or tenant_name
 
     # Find recipients: users in company whose Role has Create_Lease_Documents = true
@@ -182,7 +184,7 @@ def CheckGroupComplete(group_id: str):
     </div>
     """.strip()
 
-    from_addr = os.getenv("RESEND_FROM", "Lease Link <no-reply@leaselink.ai>")
+    from_addr = "Lease Link <no-reply@leaselink.ai>"
     subject = f"Upload Complete for {tenant_name}"
 
     resend_result = resend.Emails.send({
