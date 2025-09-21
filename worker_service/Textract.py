@@ -244,9 +244,9 @@ def runTextract(
     company_id: str,
     embedding_client,
     qdrant_client,
-    bucket,
     jobid,
-    collectionName
+    collectionName,
+    group_id
 ):
     """
     pdf: either bytes or a local path.
@@ -327,12 +327,12 @@ def runTextract(
 
     except botocore.exceptions.ClientError as e:
         print("AWS ClientError:", e.response.get("Error", {}))
-        Clear_Uploads(bucket=bucket, job_id=jobid, job_status='error')
+        Clear_Uploads(job_id=jobid, file_path=file_path, job_status='error', group_id=group_id)
         raise
     except Exception as e:
         print("Failed:", e)
         try:
-            Clear_Uploads(bucket=bucket, job_id=jobid, file_path=file_path, job_status='error')
+            Clear_Uploads(job_id=jobid, file_path=file_path, job_status='error', group_id=group_id)
         except Exception:
             pass
         raise

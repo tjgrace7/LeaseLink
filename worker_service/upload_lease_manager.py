@@ -4,7 +4,7 @@ import json
 import uuid
 from datetime import datetime
 import common.Supabase_api as Supabase_api
-from common.cleanup_utils import Clear_Uploads
+from common.cleanup_utils import Clear_Uploads, CheckGroupComplete
 
 from . import Textract
 
@@ -26,6 +26,7 @@ def load_pdf(
     job_status: dict,
     claude_client,                # ok to use in parent for metadata extraction
     claude_model: str,
+    group_id: str
 ):
     """
     1) Download PDF from Storage
@@ -48,7 +49,7 @@ def load_pdf(
             pdf_file, claude_client, supabase_client, claude_model, verbose=True
         )
         if extracted_lease_data is None:
-            uploadError("No Extraction Data", job_status, supabase_client, job_id, bucket_name, get_pdf)
+            uploadError("No Extraction Data", job_status, supabase_client, job_id, get_pdf, group_id)
             return
         # Normalize to dict
         lease_data = (
@@ -102,9 +103,9 @@ def load_pdf(
              company_id=company_id, 
              embedding_client=OpenAI,
             qdrant_client=qdrant_client,
-            bucket=bucket_name,
             jobid=job_id,
-            collectionName=collectionName
+            collectionName=collectionName,
+            group_id=group_id
              )
 
         # Status bookkeeping
@@ -124,16 +125,22 @@ def load_pdf(
             "upload_session_id": upload_session_id,
         }
         Supabase_api.supabase_post_request(supabase_client, [cost_upload], "lease_documents")
+        group = supabase_client.table('upload_groups').select('done_jobs').eq('id', group_id).execute()
+        if not group.data:
+         raise RuntimeError(f"upload_group {group_id} not found: {group}")
+        done_jobs = group.get('done_jobs') + 1
+        supabase_client.table('upload_groups').update({'done_jobs': done_jobs}).eq('id', group_id).execute
+        CheckGroupComplete(group_id)
         end = datetime.now()
         duration = (end-start).total_seconds() 
         print("Duration:", duration)
         print("Success")
     except Exception as e:
         print("Upload Error", e)
-        uploadError(e, job_status, supabase_client, job_id, bucket_name, get_pdf)
+        uploadError(e, job_status, supabase_client, job_id, get_pdf, group_id)
         
 
-def uploadError(e, job_status, supabase_client, job_id, bucket_name, get_pdf):
+def uploadError(e, job_status, supabase_client, job_id, get_pdf, group_id):
         print(f"GPT extraction or supabase insert failed: {e}")
         job_status["status"] = "error"
         # reflect error to job status table
@@ -145,4 +152,4 @@ def uploadError(e, job_status, supabase_client, job_id, bucket_name, get_pdf):
             .execute()
         )
         # cleanup uploaded artifacts
-        Clear_Uploads(job_id, bucket_name, file_path=get_pdf, job_status=job_status)
+        Clear_Uploads(job_id, get_pdf, job_status, group_id)

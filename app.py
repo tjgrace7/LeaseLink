@@ -106,6 +106,7 @@ def enqueue_next_pending_job(limit: int = JOB_CLAIM_BATCH) -> int:
         for job in jobs:
             job_id = job.get("job_id")
             lease_id = job.get("lease_id")
+            group_id = job.get("group_id")
             if not job_id or not lease_id:
                 log.warning(f"Skipping invalid job payload: {job}")
                 continue
@@ -131,6 +132,7 @@ def enqueue_next_pending_job(limit: int = JOB_CLAIM_BATCH) -> int:
 
             payload = {
                 "job_id": job_id,
+                "group_id": group_id,
                 "lease_request": {
                     "lease_document_id": lease_id,
                     "tenant_id": lease_row.get("tenant_id"),
@@ -171,7 +173,7 @@ def enqueue_next_pending_job(limit: int = JOB_CLAIM_BATCH) -> int:
         return 0
 
 
-def export_lease(job_id, lease_request):
+def export_lease(job_id, lease_request, group_id):
     """
     Thin wrapper that calls upload_lease_manager.load_pdf().
     Internal page work remains parallelized within your worker_service.
@@ -199,14 +201,14 @@ def export_lease(job_id, lease_request):
             job_status[job_id],
             claude_client,
             claude_model,
+            group_id
         )
 
     except Exception as e:
-        bucket = lease_request.get("bucket")
         file_path = lease_request.get("file_path")
         # best-effort cleanup if the job crashed after S3/Storage writes
         try:
-            upload_lease_manager.Clear_Uploads(job_id, bucket, file_path, job_status[job_id])
+            upload_lease_manager.Clear_Uploads(job_id, file_path, job_status[job_id], group_id)
         except Exception:
             pass
         print(f"[{job_id}] Error processing job: {e}")
@@ -222,6 +224,7 @@ def job_worker():
 
             job_id = item.get("job_id")
             lease_request = item.get("lease_request") or {}
+            group_id = item.get('group_id')
             if not job_id:
                 raise ValueError("Missing job_id in queue item")
             if not lease_request:
@@ -229,7 +232,7 @@ def job_worker():
 
             print(f"[{job_id}] Starting Job")
             job_status[job_id]["status"] = "in_progress"
-            export_lease(job_id, lease_request)
+            export_lease(job_id, lease_request, group_id)
 
             # If load_pdf didn't set "success", mark it here
             if job_status[job_id].get("status") not in ("success", "error", "extracted"):
@@ -244,9 +247,8 @@ def job_worker():
 
             # best-effort cleanup
             try:
-                bucket = lease_request.get("bucket")
                 file_path = lease_request.get("file_path")
-                upload_lease_manager.Clear_Uploads(jid, bucket, file_path, job_status[jid])
+                upload_lease_manager.Clear_Uploads(jid, file_path, job_status[jid], group_id)
             except Exception:
                 pass
 
