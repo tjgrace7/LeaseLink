@@ -79,7 +79,7 @@ def CheckGroupComplete(group_id: str):
         .select("id, company_id, tenant_id, total_jobs, done_jobs, error_jobs, completed_at")
         .eq("id", group_id)
     )
-    
+    print(group)
     if not group:
         raise RuntimeError(f"upload_group {group_id} not found")
 

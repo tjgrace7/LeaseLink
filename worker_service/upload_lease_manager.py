@@ -125,7 +125,9 @@ def load_pdf(
             "upload_session_id": upload_session_id,
         }
         Supabase_api.supabase_post_request(supabase_client, [cost_upload], "lease_documents")
+        print("Run Group")
         group = supabase_client.table('upload_groups').select('done_jobs').eq('id', group_id).execute()
+        print(group)
         if not group.data:
          raise RuntimeError(f"upload_group {group_id} not found: {group}")
         done_jobs = group.get('done_jobs') + 1
