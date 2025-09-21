@@ -74,7 +74,6 @@ def get_auth_email(supabase, auth_id: str) -> str | None:
 
 # ---------- Your function ----------
 def CheckGroupComplete(group_id: str):
-    print(resend.api_key)
     group = sb_single(
         supabase.table("upload_groups")
         .select("id, company_id, tenantId, total_jobs, done_jobs, error_jobs, completed_at")
@@ -92,9 +91,9 @@ def CheckGroupComplete(group_id: str):
 
     # Tenant (best effort)
     tenant_name = "(Unknown Tenant)"
-    if group.get("tenant_id"):
+    if group.get("tenantId"):
         t = sb_single(
-            supabase.table("tenant").select("Tenant_Name").eq("tenant_id", group["tenant_id"])
+            supabase.table("tenant").select("Tenant_Name").eq("tenant_id", group["tenantId"])
         ) or {}
         print(t.get("Tenant_Name"))
         tenant_name = t.get("Tenant_Name") or tenant_name
