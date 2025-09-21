@@ -132,7 +132,8 @@ def load_pdf(
          raise RuntimeError(f"upload_group {group_id} not found: {group}")
         row = group.data
         done_jobs = int(row.get('done_jobs') or 0) + 1
-        supabase_client.table('upload_groups').update({'done_jobs': done_jobs}).eq('id', group_id).execute
+        res = supabase_client.table('upload_groups').update({'done_jobs': done_jobs}).eq('id', group_id).execute()
+        print(res)
         print("Check Complete Group")
         CheckGroupComplete(group_id)
         end = datetime.now()
