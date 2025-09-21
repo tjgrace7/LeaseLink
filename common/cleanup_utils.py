@@ -76,7 +76,7 @@ def get_auth_email(supabase, auth_id: str) -> str | None:
 def CheckGroupComplete(group_id: str):
     group = sb_single(
         supabase.table("upload_groups")
-        .select("id, company_id, tenant_id, total_jobs, done_jobs, error_jobs, completed_at")
+        .select("id, company_id, tenantId, total_jobs, done_jobs, error_jobs, completed_at")
         .eq("id", group_id)
     )
     print(group)
