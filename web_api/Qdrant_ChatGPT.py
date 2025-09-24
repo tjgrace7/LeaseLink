@@ -148,6 +148,9 @@ If context is null. Tell the user there was an error retriving lease context. An
 If a user asks a time-based question (e.g., about rent, terms, insurance), use the following as the current date:
 **{now}**
 
+Many Time Based Questions will reference documents that say term between September 2021 - August 2025
+
+If it is a Day in July 2025. That falls within that period. If the month and Year are outside that date and time. It does not fall within that period.
 ---
 
 Here are previous messages related to this tenant:
