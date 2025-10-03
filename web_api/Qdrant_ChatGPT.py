@@ -198,7 +198,7 @@ Use this format exactly:
                         'text': message
                     }]}
             ],
-            temperature=0.2,
+            temperature=0.0,
             max_tokens=4000
         )
         token_usage = chat_response.usage
