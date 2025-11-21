@@ -52,6 +52,7 @@ propcache==0.3.2
 protobuf==6.31.1
 psutil==7.0.0
 pycparser==2.22
+pycryptodome==3.23.0
 pydantic==2.11.7
 pydantic_core==2.33.2
 Pygments==2.19.2
@@ -70,6 +71,7 @@ qdrant-client==1.14.3
 realtime==2.4.3
 regex==2024.11.6
 requests==2.32.4
+resend==2.14.0
 s3transfer==0.13.1
 scipy==1.16.0
 simplejson==3.20.1
@@ -91,5 +93,3 @@ wcwidth==0.2.13
 websockets==14.2
 wrapt==1.17.3
 yarl==1.20.1
-resend==2.14.0
-pycryptodome>=3.20.0
