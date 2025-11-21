@@ -1,14 +1,18 @@
 # ---------- put these caps at the VERY TOP (before heavy imports) ----------
-import os
+import os, urllib.parse, secrets, httpx, time
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 # --------------------------------------------------------------------------
+from dotenv import load_dotenv
 
-from fastapi import FastAPI, Request, Header, HTTPException
+load_dotenv()
+from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks
+from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from email_integration import PKCE
 from typing import Optional
 from queue import Queue
 import threading
@@ -18,9 +22,8 @@ import logging
 import traceback
 import sys
 import signal
+import time
 from datetime import datetime, timedelta, timezone
-
-from dotenv import load_dotenv
 from openai import OpenAI
 from anthropic import Anthropic
 from qdrant_client import QdrantClient
@@ -28,6 +31,7 @@ from qdrant_client import QdrantClient
 import common.Supabase_api as Supabase_api
 from worker_service import upload_lease_manager
 from web_api import Qdrant_ChatGPT
+from email_integration import email_integration
 
 # --------------------------- Logging ---------------------------------
 log = logging.getLogger("leaselink-app")
@@ -39,7 +43,7 @@ claude_model = "claude-sonnet-4-20250514"
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["https://www.leaselink.ai"],  # add localhost if needed
+    allow_origins=["https://www.leaselink.ai", "http://localhost:5173"],  # add localhost if needed
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,9 +52,9 @@ app.add_middleware(
 # --------------------------- Globals ----------------------------------
 job_status = {}  # { job_id: {status, error, result, ...} }
 
-load_dotenv()
 EDGE_SECRET = os.getenv("PYTHON_EDGE_SECRET")
 collectionName = os.getenv("QDRANT_COLLECTION", "Lease_Link")
+emailCollection = 'email_chunks_v1'
 
 supabase_url = os.getenv("SUPABASE_URL")
 JWKS_URL = f"{supabase_url}/auth/v1/keys" if supabase_url else None
@@ -71,6 +75,14 @@ supabase_client = Supabase_api.supabase_client_setup()
 MAX_WORKERS = int(os.getenv("LEASELINK_MAX_JOB_WORKERS", "10"))   # number of threads
 BACKLOG_TARGET = int(os.getenv("LEASELINK_QUEUE_BACKLOG", "10"))  # try to keep queue this full
 JOB_CLAIM_BATCH = int(os.getenv("LEASELINK_JOB_CLAIM_BATCH", "10"))  # how many to claim per RPC
+#Google/Microsoft Ids
+MS_CLIENT_ID = os.getenv("MS_CLIENT_ID")
+MS_REDIRECT_URI = os.getenv("MS_REDIRECT_URI")
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
+
 job_queue = Queue()
 
 
@@ -174,10 +186,10 @@ def enqueue_next_pending_job(limit: int = JOB_CLAIM_BATCH) -> int:
 
 
 def export_lease(job_id, lease_request, group_id):
-    """
-    Thin wrapper that calls upload_lease_manager.load_pdf().
-    Internal page work remains parallelized within your worker_service.
-    """
+    
+    #Thin wrapper that calls upload_lease_manager.load_pdf().
+    #Internal page work remains parallelized within your worker_service.
+    
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
         job_status[job_id]["status"] = "in_progress"
@@ -394,6 +406,91 @@ async def tenant_send_message(
     ).start()
 
     return {"status": "Message is being processed"}
+@app.get('/api/integrations/email/start')
+async def start_email_integration(request: Request, provider: str):
+
+    """
+    Step 2:
+    Redirect the user to the correct provider's Oauth Consent Screen"""
+    app_user_id = request.query_params.get('uid')
+    if not app_user_id or app_user_id in ("undefined", "null"):
+        #redirect to sign in
+        return RedirectResponse(f"{FRONTEND_URL}/auth?error=missing_uid")
+
+    state_payload = {
+        "uid": app_user_id,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 600,
+        "nonce": secrets.token_urlsafe(8)
+    }
+
+
+    state = jwt.encode(state_payload, EDGE_SECRET, algorithm="HS256")
+
+    if provider == 'microsoft':
+        base = "https://login.microsoftonline.com/common/oauth2/v2.0/authorize"
+        query = {
+            'client_id': MS_CLIENT_ID,
+            'response_type': "code",
+            'redirect_uri': MS_REDIRECT_URI,
+            'response_mode': 'query',
+            'scope': 'openid offline_access Mail.Read',
+            'state': state,
+        }
+        url = f"{base}?{urllib.parse.urlencode(query)}"
+        return RedirectResponse(url)
+    elif provider == 'google':
+        base = 'https://accounts.google.com/o/oauth2/v2/auth'
+        query = {
+            "client_id": GOOGLE_CLIENT_ID,
+            "response_type": "code",
+            "redirect_uri": GOOGLE_REDIRECT_URI,
+            "access_type": "offline",
+            "prompt": "consent",
+            "scope": "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+            "state": state,
+        }
+        url = f"{base}?{urllib.parse.urlencode(query)}"
+        return RedirectResponse(url)
+    else:
+        referer = request.headers.get("referer")
+        redirect_url = referer or "https://www.leaselink.ai/dashboard"
+        return RedirectResponse(redirect_url)
+    
+@app.get('/api/gmail/oauth/callback')
+async def gmail_callback(request: Request):
+   return await email_integration.integration_callback( request, "google")
+
+
+
+@app.get('/api/outlook/oauth/callback')
+async def outlook_callback(request: Request):
+   return await email_integration.integration_callback(request, "microsoft")  
+
+@app.post('/api/email/resync')
+async def email_sync(request: Request, authorization: Optional[str] = Header(default=None)):
+    body = await request.body()
+    print("raw body: ", body)
+    sync_request = await request.json()
+    auth_id = sync_request.get("auth_id")
+    
+
+    token = authorization.replace("Bearer", "").strip() if authorization else None
+    if not token:
+        return JSONResponse(status_code=401, content={"error": "Missing or invalid token"})
+
+    auth = verify_supabase_jwt(token)
+    if not auth:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    if auth["sub"] != sync_request.get("auth_id"):
+        raise HTTPException(status_code=403, detail="auth_id does not match token")
+    res = supabase_client.table("Access_Tokens").select("provider").eq('user_auth_id', auth_id).limit(1).execute()
+    if len(res.data) <= 0:
+        return
+    else:
+        provider = res.data[0].get('provider')
+        await email_integration.SyncMail(auth_id, provider)
 
 
 def handle_entity_question(message_request, supabase_client, qdrant_client, OpenAIclient, collectionName):
@@ -422,11 +519,11 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
 
         oldmessages = Supabase_api.message_get_request(supabase_client, session_id, "entity_questions")
 
-        final_message, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data = Qdrant_ChatGPT.get_relevant_chunks(
+        final_message, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data, email_data = Qdrant_ChatGPT.get_relevant_chunks(
             collectionName, qdrant_client, filtertype, entity_id, company_id, message,
-            OpenAIclient, claude_client, oldmessages, supabase_client, claude_model
+            OpenAIclient, claude_client, oldmessages, supabase_client, claude_model, emailCollection
         )
-
+        print(email_data)
         if final_message:
             supabase_client.table("entity_questions").insert(
                 [
@@ -441,7 +538,9 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
                         "prompt_tokens": prompt_tokens,
                         "completion_tokens": 0,
                         "entity": entity_type,
-                    },
+                    }]).execute()
+            time.sleep(2)
+            supabase_client.table("entity_questions").insert(
                     {
                         "entity_id": entity_id,
                         "company_id": company_id,
@@ -454,15 +553,15 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
                         "completion_tokens": completion_tokens,
                         "entity": entity_type,
                         "sources": json_data,
+                        "email_sources": email_data
                     },
-                ]
+                
             ).execute()
             print("Message successfully processed.")
         else:
             print("LLM returned None.")
     except Exception as e:
         print("Error in threaded message handler:", e)
-
 
 # ------------------------------ Main ----------------------------------
 if __name__ == "__main__":

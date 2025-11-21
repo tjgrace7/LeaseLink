@@ -29,3 +29,5 @@ poppler/
 .vscode/
 
 /scripts/
+#ignore folder
+ignore

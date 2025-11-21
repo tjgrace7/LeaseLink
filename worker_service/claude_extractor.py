@@ -9,6 +9,7 @@ from io import BytesIO
 import tempfile
 import time
 import re
+from Crypto.Cipher import AES
 
 def encode_pdf_to_base64(file_path):
     """Encode PDF file to base64 string"""

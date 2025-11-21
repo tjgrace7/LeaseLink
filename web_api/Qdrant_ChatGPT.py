@@ -16,36 +16,112 @@ def underscorize(s: str) -> str:
 
 
 @profile
-def extract_json_from_response(response_text):
-    # Ensure string
-    if not isinstance(response_text, str):
-        try:
-            response_text = str(response_text)
-        except Exception:
-            return None
+def _extract_braced_json(text: str, start_idx: int):
+    """
+    Starting at start_idx, find the first { or [ and extract the first COMPLETE
+    JSON object/array by counting braces/brackets. Handles strings/escapes.
+    Returns (parsed_obj, end_pos) or (None, None) if not found/parseable.
+    """
+    n = len(text)
+    # find first opening brace/bracket
+    while start_idx < n and text[start_idx] not in '{[':
+        start_idx += 1
+    if start_idx >= n:
+        return None, None
 
-    match = re.search(r"```json\s*(.*?)\s*```", response_text, re.DOTALL)
-    if not match:
+    open_char = text[start_idx]
+    close_char = '}' if open_char == '{' else ']'
+    depth = 0
+    i = start_idx
+    in_string = False
+    escape = False
+
+    while i < n:
+        ch = text[i]
+
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == '\\':
+                escape = True
+            elif ch == '"':
+                in_string = False
+        else:
+            if ch == '"':
+                in_string = True
+            elif ch == open_char:
+                depth += 1
+            elif ch == close_char:
+                depth -= 1
+                if depth == 0:
+                    # inclusive slice [start_idx:i]
+                    raw = text[start_idx:i+1]
+                    try:
+                        return json.loads(raw), i+1
+                    except json.JSONDecodeError:
+                        # If parse fails, still return substring for debugging
+                        return None, i+1
+        i += 1
+
+    return None, None
+
+def _extract_after_fence(response_text: str, fence_name: str):
+    """
+    Find ```<fence_name>, then extract the first COMPLETE JSON value ({} or [])
+    following it by brace balancing. Ignores any prose after.
+    """
+    if not isinstance(response_text, str):
+        response_text = str(response_text)
+
+    # Locate the fence start
+    fence_pat = re.compile(rf"```{re.escape(fence_name)}\b", re.IGNORECASE)
+    m = fence_pat.search(response_text)
+    if not m:
         return None
-    json_str = match.group(1)
-    try:
-        return json.loads(json_str)
-    except json.JSONDecodeError as e:
-        print("Json parsing error:", e)
-        return None
+
+    # Move to first char after the fence line
+    # Allow optional whitespace/newline after fence
+    i = m.end()
+    # skip any whitespace/newlines
+    while i < len(response_text) and response_text[i] in ' \t\r\n':
+        i += 1
+
+    # Extract a complete JSON value
+    obj, endpos = _extract_braced_json(response_text, i)
+    if obj is not None:
+        return obj
+
+    # Fallback: try to capture fenced block with closing ```
+    # and json.loads() the largest plausible block inside
+    block_match = re.search(rf"```{re.escape(fence_name)}\s*(.*?)```", response_text, re.IGNORECASE | re.DOTALL)
+    if block_match:
+        body = block_match.group(1).strip()
+        # Try a direct load first (AI might already return valid JSON)
+        try:
+            return json.loads(body)
+        except json.JSONDecodeError:
+            # Try to cut at the first balanced structure within the body
+            obj2, _ = _extract_braced_json(body, 0)
+            return obj2
+
+    return None
+
  #Gets data from vector db that was just uploaded for ChatGPT
-def get_relevant_chunks(collection_Name, q_client, filtertype1, filterid1, company_id, message, openAI, claude, oldData, supabase_client, claude_model):
+def get_relevant_chunks(collection_Name, q_client, filtertype1, filterid1, company_id, message, openAI, claude, oldData, supabase_client, claude_model, emailCollection):
     print("get_relevant_chunks")
     now = datetime.now()
     prompt_tokens = 0
     prompt_cost = 0 
     completion_tokens = 0 
     completion_cost = 0
+    res = supabase_client.table('Property_Management_Companies').select("*").eq("company_id", company_id).limit(1).execute()
+    company = res.data[0]
     # Default return values in case of failure
     default_response = (
         "Sorry, there was an error processing your question. Please try again later.",
     )
-
+    if company["Base_Function"] != True:
+        return 
     try:
         print("GPT rephrase question")
         message_summary = claude.messages.create(
@@ -121,7 +197,48 @@ Return a **single, semantically precise** version of the user's question that wi
             f"source_doc = {r.payload.get('source_doc', 'unknown')}, pageNumber = {r.payload.get('pageNumber', 'N/A')})\n{r.payload['text']}"
             for r in results if "text" in r.payload
         ])
+        emailscript = ""
+        if company["Email_Function"]:
 
+            emailresults = q_client.search(
+                collection_name=emailCollection,
+                query_vector= message_vector,
+                limit=5,
+                with_payload=True,
+                with_vectors=False,
+                query_filter=Filter(
+                    must=[
+                        FieldCondition(key="tenant_id", match=MatchValue(value=filterid1)),
+                        FieldCondition(key="company_id", match=MatchValue(value=company_id))
+                    ]
+                )
+            )
+
+            emailcontext = "\n\n".join([
+                f"email_body = {e.payload.get('body', 'unknown')}, sender = {e.payload.get('Sender_Name', 'unknown')}, subject = {e.payload.get('subject')}"
+                for e in emailresults
+
+            ])
+            emailscript ="""
+            ---
+
+            Here are emails with contacts of the tenant. 
+
+            If the referenced email context applies use that in your reference. Tell us who the email is from and the subject
+
+            {emailcontext}
+            ---
+
+            If there are emails that you reference in your response, use this as your email bracket source
+            ```emailjson
+            [
+            Curly Bracket
+                "Sender_Name": "Jayton Taylor",
+                "subject": "App issues",
+                "body": "email integration issues..."
+            Curly Bracket Close
+            ]
+            """
     except Exception as e:
         print("Error during preprocessing/Qdrant:", e)
         context = "null"
@@ -164,6 +281,11 @@ If no messages are shown, this is the first interaction.
 Use these previous messages as additional context to help answer the current question.
 
 The user is a property manager asking about a tenant, property, unit, or other property management issue. The lease information is provided in the context above.
+---
+
+Here are emails with contacts of the tenant. 
+
+If the referenced email context applies use that in your reference. Tell us who the email is from and the subject
 
 ---
 
@@ -185,6 +307,8 @@ Use this format exactly:
     "highlight_text": "abc-123"
   Curly bracket close
 ]
+
+{emailscript}
 """
 
         print("Messaging ChatGPT")
@@ -209,24 +333,36 @@ Use this format exactly:
 
         print("total_cost", completion_cost + prompt_cost)
         chat_message = chat_response.content[0].text
+        final_message = re.sub(r"```(?:json|emailjson)\s*.*?```", "", chat_message, flags=re.DOTALL|re.IGNORECASE).strip()
 
-        parts = chat_message.split("```json")
-        final_message = parts[0].strip()
 
-        json_data = extract_json_from_response(chat_message)
+
+
+        json_data = _extract_after_fence(chat_message, "json")
+        email_data = []
+        if company["Email_Function"]:
+            email_data = _extract_after_fence(chat_message, "emailjson")
         
         if json_data:
-            for data in json_data:
+            merged = {}
+            for d in json_data:
+                key = (d.get('source_doc'), d.get('pageNumber'))
+                signed_url = Supabase_api.get_signed_url(supabase_client, "lease-docs", d.get('source_doc'))
+                if key not in merged:
+                    merged[key] = {
+                        "source_doc": d.get("source_doc"),
+                        "pageNumber": d.get('pageNumber'),
+                        "highlight_text": d.get('highlight_text', ""),
+                        "viewer_url": f"{signed_url}#page={d.get('pageNumber')}&highlight_text={d.get('highlight_text')}"
+                    }
 
-                file_path = data['source_doc']
-                print(file_path)
-                signed_url = Supabase_api.get_signed_url(supabase_client, "lease-docs", file_path)
-                print(signed_url)
-                viewer_url = f"{signed_url}#page={data['pageNumber']}&highlight_text={data['highlight_text']}"
-                data["viewer_url"] = viewer_url
+                else:
+                    ht = d.get("highlight_text", "")
+                    if ht and ht not in merged[key]['highlight_text']:
+                        merged[key]['highlight_text'] = (merged[key]['highlight_text'] + " | " + ht).strip(" |")
+                json_data = list(merged.values())
 
-        print(final_message)
-        return final_message or default_response, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data or []
+        return final_message or default_response, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data or [], email_data or []
 
     except Exception as e:
         print("Error in final GPT step:", e)
