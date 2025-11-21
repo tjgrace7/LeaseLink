@@ -519,6 +519,8 @@ async def new_contact_email_sync(
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
     auth_id = sync_request.get("auth_id")
+    #Sent a contact from supabase
+    contact = sync_request.get("contact")
     if not auth_id:
         raise HTTPException(status_code=400, detail="Missing auth_id")
 
@@ -538,9 +540,10 @@ async def new_contact_email_sync(
     provider = res.data[0].get("provider")
     if not provider:
         return Response(status_code=204)
+    contacts = [contact]
 
     # 4. Trigger sync (fire-and-forget style)
-    await email_integration.SyncMail(auth_id, provider, True)
+    await email_integration.SyncMail(auth_id, provider, True, contacts)
 
     # You can return 202 to signal "accepted / started"
     return Response(status_code=202)

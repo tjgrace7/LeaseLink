@@ -176,7 +176,7 @@ async def fetchMessages(user_id, provider, contact, folder: Optional[str] = None
 
 
 
-async def SyncMail(user_id, provider, new_contact: bool = False):
+async def SyncMail(user_id, provider, new_contact: bool = False, contacts: list = []):
     previous_sync = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
     if not new_contact:
         sync = await previous_subabase_sync(user_id)
@@ -203,7 +203,8 @@ async def SyncMail(user_id, provider, new_contact: bool = False):
                         print(f"[SyncMail] Failed to parse last_sync '{raw_last_sync}': {e}")
                     # keep default epoch
 
-    contacts = await getContacts(user_id)
+    if(len(contacts) <= 0):
+        contacts = await getContacts(user_id)
     await supabase_sync(user_id, "in_progress")
     for contact in contacts:
         await fetchMessages(user_id=user_id, provider=provider, contact=contact, previous_sync=previous_sync)
