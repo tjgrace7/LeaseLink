@@ -18,6 +18,7 @@ from fastapi.responses import RedirectResponse
 import jwt
 import base64
 from qdrant_client.models import Filter, MatchValue, FieldCondition
+import resend
 
 TENANT = os.getenv("MS_TENANT", "common")
 
@@ -44,8 +45,10 @@ OPENAI_API_KEY = os.getenv("OPEN_AI_PROJECT_KEY")
 ChatGPT = OpenAI(api_key=OPENAI_API_KEY)
 Consistency_Header= {"ConsistencyLevel": 'eventual'}
 COLL = "email_chunks_v1"
+Resend_key = os.getenv("RESEND_SECRET_KEY")
 
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://leaselink.ai")
 
 async def get_internal_user_id(user_id):
     res = supabase.table("User_Data").select("user_id").eq("auth_id", user_id).limit(1).execute()
@@ -173,29 +176,31 @@ async def fetchMessages(user_id, provider, contact, folder: Optional[str] = None
 
 
 
-async def SyncMail(user_id, provider):
-    sync = await previous_subabase_sync(user_id)
+async def SyncMail(user_id, provider, new_contact: bool = False):
     previous_sync = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+    if not new_contact:
+        sync = await previous_subabase_sync(user_id)
+        
 
-    if sync:
-        raw_last_sync = sync.get("last_sync")
-        if raw_last_sync:
-            if isinstance(raw_last_sync, datetime):
-                # Ensure it's timezone-aware; assume UTC if naive
-                if raw_last_sync.tzinfo is None:
-                    previous_sync = raw_last_sync.replace(tzinfo=timezone.utc)
-                else:
-                    previous_sync = raw_last_sync
-            elif isinstance(raw_last_sync, str):
-                try:
-                    if raw_last_sync.endswith("Z"):
-                        raw_last_sync = raw_last_sync.replace("Z", "+00:00")
-                    dt = datetime.fromisoformat(raw_last_sync)
-                    if dt.tzinfo is None:
-                        dt = dt.replace(tzinfo=timezone.utc)
-                    previous_sync = dt
-                except Exception as e:
-                    print(f"[SyncMail] Failed to parse last_sync '{raw_last_sync}': {e}")
+        if sync:
+            raw_last_sync = sync.get("last_sync")
+            if raw_last_sync:
+                if isinstance(raw_last_sync, datetime):
+                    # Ensure it's timezone-aware; assume UTC if naive
+                    if raw_last_sync.tzinfo is None:
+                        previous_sync = raw_last_sync.replace(tzinfo=timezone.utc)
+                    else:
+                        previous_sync = raw_last_sync
+                elif isinstance(raw_last_sync, str):
+                    try:
+                        if raw_last_sync.endswith("Z"):
+                            raw_last_sync = raw_last_sync.replace("Z", "+00:00")
+                        dt = datetime.fromisoformat(raw_last_sync)
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        previous_sync = dt
+                    except Exception as e:
+                        print(f"[SyncMail] Failed to parse last_sync '{raw_last_sync}': {e}")
                     # keep default epoch
 
     contacts = await getContacts(user_id)
@@ -203,8 +208,100 @@ async def SyncMail(user_id, provider):
     for contact in contacts:
         await fetchMessages(user_id=user_id, provider=provider, contact=contact, previous_sync=previous_sync)
     await supabase_sync(user_id, 'complete')
+    sync_notification(user_id, contacts)
     print("Messages Fetched")
+
     return True
+
+def sync_notification(user_id, contacts):
+    user = supabase.auth.admin.get_user_by_id(user_id)
+    email = user.user.email
+    contact_count = len(contacts)
+    user_name = user.user.name
+    bullet_list_html = "<ul style='padding-left:20px;margin:0;'>"
+    for c in contacts:
+        bullet_list_html += f"<li>{c['Contact_Name']}</li>"
+    params: resend.Emails.SendParams = {
+        'from': "Lease Link <no-reply@leaselink.ai>",
+        'to': email,
+        "subject": "Email Successfully Synced",
+        'html': f"""
+<!DOCTYPE html>
+<html lang="en" style="margin:0;padding:0;background:#f7f7f7;">
+  <body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background:#f7f7f7;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="background:#f7f7f7;padding:20px 0;">
+      <tr>
+        <td align="center">
+          <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 16px rgba(0,0,0,0.06);">
+            
+            <!-- Header -->
+            <tr>
+              <td style="background:#3B82F6;padding:20px 30px;text-align:center;">
+                <h1 style="margin:0;font-size:24px;color:#ffffff;font-weight:700;">
+                  Email Sync Successful 🎉
+                </h1>
+              </td>
+            </tr>
+
+            <!-- Body -->
+            <tr>
+              <td style="padding:30px;color:#333333;font-size:16px;line-height:1.6;">
+                <p>Hi <strong>{user_name}</strong>,</p>
+
+                <p>Your email account has been successfully synced with <strong>Lease Link</strong>.</p>
+
+                <p>
+                  We identified <strong>{contact_count}</strong> tenant contacts in your synced emails.
+                  These contacts are now linked to your tenant communication inside Lease Link.
+                </p>
+
+                <p>Here are the contacts we found:</p>
+
+                {bullet_list_html}
+
+                <p style="margin-top:20px;">
+                  Emails associated with these contacts will now appear directly inside your tenant chat 
+                  for streamlined communication and better record-keeping.
+                </p>
+
+                <p style="margin-top:20px;">
+                  If you didn’t request this or notice anything unusual, please contact Lease Link support.
+                </p>
+              </td>
+            </tr>
+
+            <!-- Button -->
+            <tr>
+              <td align="center" style="padding:10px 30px 30px 30px;">
+                <a 
+                  href="https://app.leaselink.ai"
+                  style="display:inline-block;padding:12px 22px;background:#3B82F6;color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;border-radius:8px;"
+                >
+                  Open Lease Link
+                </a>
+              </td>
+            </tr>
+
+            <!-- Footer -->
+            <tr>
+              <td style="padding:20px 30px 30px 30px;color:#888888;font-size:13px;text-align:center;line-height:1.5;">
+                <p style="margin:0;">Lease Link — Smarter Leasing Starts Here</p>
+                <p style="margin:5px 0 0;">You're receiving this because your mailbox was added to Lease Link.</p>
+              </td>
+            </tr>
+
+          </table>
+        </td>
+      </tr>
+    </table>
+  </body>
+</html>
+"""
+
+    }
+    send = resend.Emails.send(params)
+    print(send)
+
 
 async def handle_message_upload(contact, message, content_type, content_html, message_id, provider):
     clean_text = html_to_text_microsoft(content_type, content_html)
@@ -405,9 +502,9 @@ async def integration_callback(request: Request, provider: str):
         st = jwt.decode(state, EDGE_SECRET, algorithms=["HS256"])
         app_user_id = st.get('uid')
         if not app_user_id:
-            return RedirectResponse(f"{FRONTEND_URL}/auth?error=not_signed_in")
+            return RedirectResponse(f"{FRONTEND_URL}/login?error=not_signed_in")
     except Exception:
-        return RedirectResponse(f"{FRONTEND_URL}/auth?error=bad_state")
+        return RedirectResponse(f"{FRONTEND_URL}/settings/integrations?error=bad_state")
 
     token_data = await exchange_code_for_tokens(code, provider)
     access_token = token_data["access_token"]

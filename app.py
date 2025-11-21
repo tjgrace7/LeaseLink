@@ -8,7 +8,7 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 from dotenv import load_dotenv
 
 load_dotenv()
-from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks
+from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks, Response
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -32,6 +32,8 @@ import common.Supabase_api as Supabase_api
 from worker_service import upload_lease_manager
 from web_api import Qdrant_ChatGPT
 from email_integration import email_integration
+import hmac
+import hashlib
 
 # --------------------------- Logging ---------------------------------
 log = logging.getLogger("leaselink-app")
@@ -97,6 +99,14 @@ def verify_supabase_jwt(token: str):
     )
     return payload
 
+def verify_signature(body: bytes, signature: str, timestamp: str) -> bool:
+    # optional: reject very old timestamps to prevent replay
+    # (e.g., if abs(now - timestamp) > 5 minutes: return False)
+
+    msg = timestamp.encode("utf-8") + b"." + body
+    expected = hmac.new(EDGE_SECRET, msg, hashlib.sha256).hexdigest()
+    # constant-time comparison
+    return hmac.compare_digest(expected, signature)
 
 def enqueue_next_pending_job(limit: int = JOB_CLAIM_BATCH) -> int:
     """
@@ -492,6 +502,48 @@ async def email_sync(request: Request, authorization: Optional[str] = Header(def
         provider = res.data[0].get('provider')
         await email_integration.SyncMail(auth_id, provider)
 
+@app.post("/api/email/new_contact")
+async def new_contact_email_sync(
+    request: Request,
+    x_edge_token: str = Header(..., alias="X-Edge-Token"),  # required header
+):
+    # 1. Authenticate the request using the shared secret in the header
+    if x_edge_token != EDGE_SECRET:
+        # Don't leak details
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    # 2. Parse JSON body (no secrets here)
+    try:
+        sync_request = await request.json()
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+    auth_id = sync_request.get("auth_id")
+    if not auth_id:
+        raise HTTPException(status_code=400, detail="Missing auth_id")
+
+    # 3. Look up provider for this auth_id
+    res = (
+        supabase_client.table("Access_Tokens")
+        .select("provider")
+        .eq("user_auth_id", auth_id)
+        .limit(1)
+        .execute()
+    )
+
+    if not res.data:
+        # no token for this auth_id; nothing to sync
+        return Response(status_code=204)
+
+    provider = res.data[0].get("provider")
+    if not provider:
+        return Response(status_code=204)
+
+    # 4. Trigger sync (fire-and-forget style)
+    await email_integration.SyncMail(auth_id, provider, True)
+
+    # You can return 202 to signal "accepted / started"
+    return Response(status_code=202)
 
 def handle_entity_question(message_request, supabase_client, qdrant_client, OpenAIclient, collectionName):
     try:
