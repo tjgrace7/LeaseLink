@@ -177,7 +177,7 @@ async def fetchMessages(user_id, provider, contact, folder: Optional[str] = None
 
 
 async def SyncMail(user_id, provider, new_contact: bool = False, contacts: list = []):
-    print("Sync Mail Start")
+    print(contacts)
     try:
         previous_sync = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
         if not new_contact:
