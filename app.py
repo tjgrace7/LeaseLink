@@ -515,6 +515,7 @@ async def new_contact_email_sync(
     # 2. Parse JSON body (no secrets here)
     try:
         sync_request = await request.json()
+        print(sync_request)
     except Exception:
         raise HTTPException(status_code=400, detail="Invalid JSON body")
 
