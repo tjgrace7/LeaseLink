@@ -521,7 +521,8 @@ async def new_contact_email_sync(
 
     auth_id = sync_request.get("auth_id")
     #Sent a contact from supabase
-    contact = sync_request.get("contact")
+    contact = sync_request.get("contacts")
+    print(contact)
     if not auth_id:
         raise HTTPException(status_code=400, detail="Missing auth_id")
 
