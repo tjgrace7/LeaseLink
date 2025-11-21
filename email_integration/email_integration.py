@@ -219,10 +219,13 @@ async def SyncMail(user_id, provider, new_contact: bool = False, contacts: list 
         print("Failed to Sync Mail", e)
 
 def sync_notification(user_id, contacts):
-    user = supabase.auth.admin.get_user_by_id(user_id)
-    email = user.user.email
+    admin = supabase.auth.admin
+
+    resp = admin.get_user_by_id(user_id)
+    user_data = resp.user
+    email = user_data.email
     contact_count = len(contacts)
-    user_name = user.user.name
+    user_name = user_data.user_metadata.get("name", "") if user_data.user_metadata else ""
     bullet_list_html = "<ul style='padding-left:20px;margin:0;'>"
     for c in contacts:
         bullet_list_html += f"<li>{c['Contact_Name']}</li>"
