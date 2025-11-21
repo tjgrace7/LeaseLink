@@ -544,10 +544,9 @@ async def new_contact_email_sync(
     contacts = [contact]
     print("Sync Mail")
     # 4. Trigger sync (fire-and-forget style)
-    await email_integration.SyncMail(auth_id, provider, True, contacts)
+    return await email_integration.SyncMail(auth_id, provider, True, contacts)
 
-    # You can return 202 to signal "accepted / started"
-    return Response(status_code=202)
+
 
 def handle_entity_question(message_request, supabase_client, qdrant_client, OpenAIclient, collectionName):
     try:
