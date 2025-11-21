@@ -542,7 +542,7 @@ async def new_contact_email_sync(
     if not provider:
         return Response(status_code=204)
     contacts = [contact]
-
+    print("Sync Mail")
     # 4. Trigger sync (fire-and-forget style)
     await email_integration.SyncMail(auth_id, provider, True, contacts)
 

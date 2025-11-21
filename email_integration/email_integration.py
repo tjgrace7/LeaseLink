@@ -177,42 +177,46 @@ async def fetchMessages(user_id, provider, contact, folder: Optional[str] = None
 
 
 async def SyncMail(user_id, provider, new_contact: bool = False, contacts: list = []):
-    previous_sync = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
-    if not new_contact:
-        sync = await previous_subabase_sync(user_id)
+    print("Sync Mail Start")
+    try:
+        previous_sync = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        if not new_contact:
+            sync = await previous_subabase_sync(user_id)
         
 
-        if sync:
-            raw_last_sync = sync.get("last_sync")
-            if raw_last_sync:
-                if isinstance(raw_last_sync, datetime):
-                    # Ensure it's timezone-aware; assume UTC if naive
-                    if raw_last_sync.tzinfo is None:
-                        previous_sync = raw_last_sync.replace(tzinfo=timezone.utc)
-                    else:
-                        previous_sync = raw_last_sync
-                elif isinstance(raw_last_sync, str):
-                    try:
-                        if raw_last_sync.endswith("Z"):
-                            raw_last_sync = raw_last_sync.replace("Z", "+00:00")
-                        dt = datetime.fromisoformat(raw_last_sync)
-                        if dt.tzinfo is None:
-                            dt = dt.replace(tzinfo=timezone.utc)
-                        previous_sync = dt
-                    except Exception as e:
-                        print(f"[SyncMail] Failed to parse last_sync '{raw_last_sync}': {e}")
+            if sync:
+                raw_last_sync = sync.get("last_sync")
+                if raw_last_sync:
+                    if isinstance(raw_last_sync, datetime):
+                        # Ensure it's timezone-aware; assume UTC if naive
+                        if raw_last_sync.tzinfo is None:
+                            previous_sync = raw_last_sync.replace(tzinfo=timezone.utc)
+                        else:
+                            previous_sync = raw_last_sync
+                    elif isinstance(raw_last_sync, str):
+                        try:
+                            if raw_last_sync.endswith("Z"):
+                                raw_last_sync = raw_last_sync.replace("Z", "+00:00")
+                            dt = datetime.fromisoformat(raw_last_sync)
+                            if dt.tzinfo is None:
+                                dt = dt.replace(tzinfo=timezone.utc)
+                            previous_sync = dt
+                        except Exception as e:
+                            print(f"[SyncMail] Failed to parse last_sync '{raw_last_sync}': {e}")
                     # keep default epoch
 
-    if(len(contacts) <= 0):
-        contacts = await getContacts(user_id)
-    await supabase_sync(user_id, "in_progress")
-    for contact in contacts:
-        await fetchMessages(user_id=user_id, provider=provider, contact=contact, previous_sync=previous_sync)
-    await supabase_sync(user_id, 'complete')
-    sync_notification(user_id, contacts)
-    print("Messages Fetched")
+        if(len(contacts) <= 0):
+            contacts = await getContacts(user_id)
+        await supabase_sync(user_id, "in_progress")
+        for contact in contacts:
+            await fetchMessages(user_id=user_id, provider=provider, contact=contact, previous_sync=previous_sync)
+        await supabase_sync(user_id, 'complete')
+        sync_notification(user_id, contacts)
+        print("Messages Fetched")
 
-    return True
+        return True
+    except Exception as e:
+        print("Failed to Sync Mail", e)
 
 def sync_notification(user_id, contacts):
     user = supabase.auth.admin.get_user_by_id(user_id)
