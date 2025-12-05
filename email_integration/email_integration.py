@@ -444,6 +444,7 @@ async def UploadMail    (
     encoding = tiktoken.encoding_for_model("text-embedding-3-large")
     token_count = len(encoding.encode(text)) or 0
     embedding_cost = token_count*0.00000013
+    print("Tenant_id", tenant_id)
 
     point = PointStruct(
         id=str(uuid4()),
