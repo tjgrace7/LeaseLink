@@ -472,6 +472,7 @@ async def UploadMail    (
         "Sender_Name": sender_name,
         },
     )
+    print(point)
     if isinstance(point, PointStruct):
         vec_len = len(_to_vec_list(point)) 
         ensure_collection_exists(collection, vec_len, qdrant_client)
