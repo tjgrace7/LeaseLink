@@ -417,11 +417,15 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
         # Check user's First_Value status
         user_data_resp = supabase_client.table("User_Data").select("First_Value").eq('auth_id', auth_id).single().execute()
         
-        # FIXED: Check if data exists and access properly
-        if not user_data_resp:
+        # For supabase-py v2: user_data_resp.data holds the row (or None)
+        user_row = getattr(user_data_resp, "data", None)
+
+        if not user_row:
             raise HTTPException(status_code=404, detail="User not found")
-        
-        first_value = user_data_resp.get("First_Value")
+
+        # Now safely read First_Value
+        first_value = user_row.get("First_Value")
+
         if first_value is True:
             raise HTTPException(status_code=403, detail='User has already received First Value Upload')
         
