@@ -388,51 +388,82 @@ def cron_tick(x_cron_secret: str = Header(default="")):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post('/firstLease')
+@app.post('/firstLease')
 async def first_lease(request: Request, authorization: Optional[str] = Header(default=None)):
-    body = await request.body()
-    print("raw body: ", body)
-    lease_request = await request.json()
-    auth_id = lease_request.get("auth_id")
-    job_id = lease_request.get('job_id')
-    group_id = lease_request.get('group_id')
-    lease_data = lease_request.get('lease_data')
+    try:
+        body = await request.body()
+        print("raw body: ", body)
+        lease_request = await request.json()
+        auth_id = lease_request.get("auth_id")
+        job_id = lease_request.get('job_id')
+        group_id = lease_request.get('group_id')
+        lease_data = lease_request.get('lease_data')
 
-    token = authorization.replace("Bearer", "").strip() if authorization else None
-    if not token:
-        return JSONResponse(status_code=401, content={"error": "Missing or invalid token"})
+        # Validate required fields
+        if not auth_id or not job_id or not lease_data:
+            raise HTTPException(status_code=400, detail="Missing required fields: auth_id, job_id, or lease_data")
 
-    auth = verify_supabase_jwt(token)
-    if not auth:
-        raise HTTPException(status_code=403, detail="Unauthorized")
+        token = authorization.replace("Bearer", "").strip() if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Missing or invalid token")
 
-    if auth["sub"] != lease_request.get("auth_id"):
-        raise HTTPException(status_code=403, detail="auth_id does not match token")
-    user_data_resp = supabase_client.table("User_Data").select("First_Value").eq('auth_id', auth_id).single().execute()
+        auth = verify_supabase_jwt(token)
+        if not auth:
+            raise HTTPException(status_code=403, detail="Unauthorized")
 
-    if not user_data_resp:
-        raise HTTPException(status_code=404, detail="User not found")
-    first_value = user_data_resp.get("First_Value")
-    if first_value is True:
-        raise HTTPException(status_code=403, detail='User has already received First Value Upload')
-    job_status[job_id] = {
-            "status": "in-progress",
+        if auth["sub"] != auth_id:
+            raise HTTPException(status_code=403, detail="auth_id does not match token")
+        
+        # Check user's First_Value status
+        user_data_resp = supabase_client.table("User_Data").select("First_Value").eq('auth_id', auth_id).single().execute()
+        
+        # FIXED: Check if data exists and access properly
+        if not user_data_resp.data:
+            raise HTTPException(status_code=404, detail="User not found")
+        
+        first_value = user_data_resp.data.get("First_Value")
+        if first_value is True:
+            raise HTTPException(status_code=403, detail='User has already received First Value Upload')
+        
+        # Initialize job status
+        job_status[job_id] = {
+            "status": "in_progress",
             "error": None,
             "result": None,
             "started_at": datetime.now(timezone.utc).isoformat(),
         }
-    supabase_client.table("Upload_Job_Status").update({"job_info": job_status[job_id]}).eq("job_id", job_id).execute()
-    success = await export_lease(job_id=job_id, lease_request=lease_data, group_id=group_id)
-
-    if not success:
+        
+        supabase_client.table("Upload_Job_Status").update(
+            {"job_info": job_status[job_id]}
+        ).eq("job_id", job_id).execute()
+        
+        # Execute the job synchronously (bypass queue)
+        # Run in thread to avoid blocking the event loop
+        def run_export():
+            try:
+                export_lease(job_id=job_id, lease_request=lease_data, group_id=group_id)
+            except Exception as e:
+                log.error(f"Export lease failed in thread: {e}")
+                job_status[job_id]["status"] = "error"
+                job_status[job_id]["error"] = str(e)
+                supabase_client.table("Upload_Job_Status").update(
+                    {"job_info": job_status[job_id]}
+                ).eq("job_id", job_id).execute()
+        
+        # Start processing in background thread
+        threading.Thread(target=run_export, daemon=True).start()
+        
         return JSONResponse(
-            status_code=500,
-            content={"message": "Failed to Upload Lease", 'job_id': job_id}
+            status_code=200,
+            content={"message": "Lease upload started successfully", "job_id": job_id}
         )
-    return JSONResponse(
-    status_code=200,
-    content={"message": "Lease uploaded successfully", "job_id": job_id}
-)
-
+    
+    except HTTPException:
+        # Re-raise HTTP exceptions as-is
+        raise
+    except Exception as e:
+        log.error(f"Unexpected error in /firstLease: {e}\n{traceback.format_exc()}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
 
 @app.post("/entity_questions")
 async def tenant_send_message(
