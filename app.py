@@ -409,7 +409,7 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
         raise HTTPException(status_code=403, detail="auth_id does not match token")
     user_data = supabase_client.table("User_Data").select("*").eq('auth_id', auth_id).single().execute()
     print(user_data)
-    if user_data.First_Value:
+    if user_data["First_Value"]:
         raise HTTPException(status_code=403, detail='User has already received First Value Upload')
     job_status[job_id] = {
             "status": "in-progress",
@@ -417,9 +417,9 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
             "result": None,
         }
     supabase_client.table("Upload_Job_Status").update({"job_info": job_status[job_id]}).eq("job_id", job_id).execute()
-    res = await export_lease(job_id=job_id, lease_request=lease_data, group_id=group_id)
+    success = await export_lease(job_id=job_id, lease_request=lease_data, group_id=group_id)
 
-    if not res.ok:
+    if not success:
         return JSONResponse(
             status_code=500,
             content={"message": "Failed to Upload Lease", 'job_id': job_id}
