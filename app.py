@@ -387,6 +387,37 @@ def cron_tick(x_cron_secret: str = Header(default="")):
         log.error("Unhandled exception in cron_tick: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post('/firstLease')
+async def first_lease(request: Request, authorization: Optional[str] = Header(default=None)):
+    body = await request.body()
+    print("raw body: ", body)
+    lease_request = await request.json()
+    auth_id = lease_request.get("auth_id")
+    job_id = lease_request.get('job_id')
+    group_id = lease_request.get('group_id')
+    lease_data = lease_request.get('lease_data')
+
+    token = authorization.replace("Bearer", "").strip() if authorization else None
+    if not token:
+        return JSONResponse(status_code=401, content={"error": "Missing or invalid token"})
+
+    auth = verify_supabase_jwt(token)
+    if not auth:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    if auth["sub"] != lease_request.get("auth_id"):
+        raise HTTPException(status_code=403, detail="auth_id does not match token")
+    user_data = supabase_client.table("User_Data").select("*").eq('auth_id', auth_id).single().execute()
+    if user_data.First_Value:
+        raise HTTPException(status_code=403, detail='User has already received First Value Upload')
+    
+    res = await export_lease(job_id=job_id, lease_request=lease_data, group_id=group_id)
+
+    return JSONResponse(
+    status_code=200,
+    content={"message": "Lease uploaded successfully", "job_id": job_id}
+)
+
 
 @app.post("/entity_questions")
 async def tenant_send_message(
@@ -476,6 +507,7 @@ async def gmail_callback(request: Request):
 @app.get('/api/outlook/oauth/callback')
 async def outlook_callback(request: Request):
    return await email_integration.integration_callback(request, "microsoft")  
+
 
 @app.post('/api/email/resync')
 async def email_sync(request: Request, authorization: Optional[str] = Header(default=None)):
