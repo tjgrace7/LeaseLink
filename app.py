@@ -387,7 +387,7 @@ def cron_tick(x_cron_secret: str = Header(default="")):
         log.error("Unhandled exception in cron_tick: %s\n%s", e, traceback.format_exc())
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post('/firstLease')
+
 @app.post('/firstLease')
 async def first_lease(request: Request, authorization: Optional[str] = Header(default=None)):
     try:
@@ -418,10 +418,10 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
         user_data_resp = supabase_client.table("User_Data").select("First_Value").eq('auth_id', auth_id).single().execute()
         
         # FIXED: Check if data exists and access properly
-        if not user_data_resp.data:
+        if not user_data_resp:
             raise HTTPException(status_code=404, detail="User not found")
         
-        first_value = user_data_resp.data.get("First_Value")
+        first_value = user_data_resp.get("First_Value")
         if first_value is True:
             raise HTTPException(status_code=403, detail='User has already received First Value Upload')
         
