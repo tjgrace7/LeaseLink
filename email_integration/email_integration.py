@@ -223,13 +223,13 @@ def sync_notification(user_id, contacts):
 
     resp = admin.get_user_by_id(user_id)
     user_data = resp.user
-    print(user_data)
+    print("User Data",user_data)
     email = user_data.email
     contact_count = len(contacts)
     user_name = user_data.user_metadata.get("name", "") if user_data.user_metadata else ""
     bullet_list_html = "<ul style='padding-left:20px;margin:0;'>"
     for c in contacts:
-        bullet_list_html += f"<li>{c['Contact_Name']}</li>"
+        bullet_list_html += f"<li>{c['contact_name']}</li>"
     params: resend.Emails.SendParams = {
         'from': "Lease Link <no-reply@leaselink.ai>",
         'to': email,
