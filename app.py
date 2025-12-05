@@ -408,8 +408,8 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
     if auth["sub"] != lease_request.get("auth_id"):
         raise HTTPException(status_code=403, detail="auth_id does not match token")
     user_data = supabase_client.table("User_Data").select("*").eq('auth_id', auth_id).single().execute()
-    print(user_data)
-    if user_data["First_Value"]:
+    print(user_data["First_Value"])
+    if user_data["First_Value"] == True:
         raise HTTPException(status_code=403, detail='User has already received First Value Upload')
     job_status[job_id] = {
             "status": "in-progress",
