@@ -416,7 +416,7 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
         
         # Check user's First_Value status
         user_data_resp = supabase_client.table("User_Data").select("First_Value").eq('auth_id', auth_id).single().execute()
-        
+        print(user_data_resp)
         # For supabase-py v2: user_data_resp.data holds the row (or None)
         user_row = getattr(user_data_resp, "data", None)
 
