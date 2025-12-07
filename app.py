@@ -443,19 +443,17 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
         
         # Execute the job synchronously (bypass queue)
         # Run in thread to avoid blocking the event loop
-        def run_export():
-            try:
-                export_lease(job_id=job_id, lease_request=lease_data, group_id=group_id)
-            except Exception as e:
-                log.error(f"Export lease failed in thread: {e}")
-                job_status[job_id]["status"] = "error"
-                job_status[job_id]["error"] = str(e)
-                supabase_client.table("Upload_Job_Status").update(
-                    {"job_info": job_status[job_id]}
-                ).eq("job_id", job_id).execute()
+
+        try:
+            export_lease(job_id=job_id, lease_request=lease_data, group_id=group_id)
+        except Exception as e:
+            log.error(f"Export lease failed in thread: {e}")
+            job_status[job_id]["status"] = "error"
+            job_status[job_id]["error"] = str(e)
+            supabase_client.table("Upload_Job_Status").update(
+                {"job_info": job_status[job_id]}
+            ).eq("job_id", job_id).execute()
         
-        # Start processing in background thread
-        threading.Thread(target=run_export, daemon=True).start()
         
         return JSONResponse(
             status_code=200,
