@@ -4,6 +4,7 @@ import json
 import uuid
 from datetime import datetime
 import common.Supabase_api as Supabase_api
+import traceback
 from common.cleanup_utils import Clear_Uploads, CheckGroupComplete
 
 from . import Textract
@@ -142,6 +143,7 @@ def load_pdf(
         print("Success")
     except Exception as e:
         print("Upload Error", e)
+        print(traceback.format_exc)
         uploadError(e, job_status, supabase_client, job_id, get_pdf, group_id)
         
 
