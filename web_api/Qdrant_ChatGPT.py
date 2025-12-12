@@ -214,12 +214,13 @@ Return a **single, semantically precise** version of the user's question that wi
                 )
             )
 
+
             emailcontext = "\n\n".join([
                 f"email_body = {e.payload.get('body', 'unknown')}, sender = {e.payload.get('Sender_Name', 'unknown')}, subject = {e.payload.get('subject')}"
                 for e in emailresults
 
             ])
-            emailscript ="""
+            emailscript =f"""
             ---
 
             Here are emails with contacts of the tenant. 
