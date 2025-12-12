@@ -19,6 +19,7 @@ import jwt
 import base64
 from qdrant_client.models import Filter, MatchValue, FieldCondition
 import resend
+import traceback
 
 TENANT = os.getenv("MS_TENANT", "common")
 
@@ -216,6 +217,7 @@ async def SyncMail(user_id, provider, new_contact: bool = False, contacts: list 
 
         return True
     except Exception as e:
+        print(traceback.format_exc)
         print("Failed to Sync Mail", e)
 
 def sync_notification(user_id, contacts):
@@ -499,6 +501,7 @@ async def getContacts(user_id):
 
 
 async def integration_callback(request: Request, provider: str):
+    print("Integration Callback Triggered")
     qp=request.query_params
     if 'error' in qp:
         #TODO Make sure this link goes somewhere the user knows code is missing
@@ -574,6 +577,7 @@ async def integration_callback(request: Request, provider: str):
 
 
 async def refresh_access_token(user_id: str) -> dict:
+    print("refresh access token")
     """
     Load user's tokens, refresh if expired (with skew), save rotated refresh_token,
     and return a dict with access_token, expires_at (UTC ISO), scope, provider_account_id.
