@@ -23,6 +23,7 @@ import traceback
 import sys
 import signal
 import time
+from starlette.concurrency import run_in_threadpool
 from datetime import datetime, timedelta, timezone
 from openai import OpenAI
 from anthropic import Anthropic
@@ -447,7 +448,9 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
         # Run in thread to avoid blocking the event loop
 
         try:
-            result = export_lease(job_id=job_id, lease_request=lease_data, group_id=group_id, first_lease=True)
+            t0 = time.time()
+            result = run_in_threadpool(export_lease, job_id, lease_data, group_id, True)
+            print("End export_lease, seconds", time.time() - t0)
             job_status[job_id]["status"] = "success"
             job_status[job_id]["result"] = result
             job_status[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
