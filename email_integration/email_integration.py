@@ -59,6 +59,7 @@ async def get_internal_user_id(user_id):
     if res and getattr(res, "data", None):
         if len(res.data) > 0:
             internal_user_id = res.data[0].get("user_id")
+            print("Internal User ID:", internal_user_id)
 
     if not internal_user_id:
         print(f"[supabase_sync] No matching internal user_id for auth_id={user_id}")
@@ -70,7 +71,7 @@ async def supabase_sync(user_id, sync_status):
 
     # Use UTC-aware datetime
     now = datetime.now(timezone.utc)
-
+    print(now.isoformat())
     supabase.table("Email_Sync_Logs").upsert(
         {
             'user_id': internal_user_id,
@@ -1014,6 +1015,7 @@ def html_to_text_microsoft(content_type: str, body: str) -> str:
         soup = BeautifulSoup(body or "", "html.parser")
         text = soup.get_text(separator=" ", strip=True)
         return " ".join(text.split())
+    print(body)
     return (body or "").strip()
 
 
