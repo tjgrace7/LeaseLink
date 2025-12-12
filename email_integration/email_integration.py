@@ -52,6 +52,7 @@ Resend_key = os.getenv("RESEND_SECRET_KEY")
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://leaselink.ai")
 
 async def get_internal_user_id(user_id):
+    print("Get Internal User ID")
     res = supabase.table("User_Data").select("user_id").eq("auth_id", user_id).limit(1).execute()
 
     internal_user_id = None
@@ -64,6 +65,7 @@ async def get_internal_user_id(user_id):
         return
     return internal_user_id
 async def supabase_sync(user_id, sync_status):
+    print("Supabase Sync")
     internal_user_id = await get_internal_user_id(user_id)
 
     # Use UTC-aware datetime
@@ -80,6 +82,7 @@ async def supabase_sync(user_id, sync_status):
 
 
 async def previous_subabase_sync(user_id):
+    print("Previous Supabase Sync")
     internal_user_id = await get_internal_user_id(user_id)
 
 
@@ -91,6 +94,7 @@ async def previous_subabase_sync(user_id):
     
 
 def save_ms_tokens_for_user(*, app_user_id: str, provider_account_id: str, access_token: str, refresh_token: str, expires_in: str, provider: str):
+    print("Save MS Tokens for User")
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
     expires_at_iso = expires_at.isoformat()
     
@@ -113,6 +117,7 @@ async def exchange_code_for_tokens(code: str, provider: str):
     """
     Exchange Authorization Code for Tokens
     """
+    print("Exchange Code for Tokens")
     if provider == 'microsoft':
         token_url = MICROSOFT_TOKEN_URL
         payload = {
@@ -146,6 +151,7 @@ async def exchange_code_for_tokens(code: str, provider: str):
         return data
     
 async def fetchMessages(user_id, provider, contact, folder: Optional[str] = None, previous_sync: Optional[datetime] = None):
+    print("Start Fetch Messages")
     email = contact["email"] if isinstance(contact, dict) else contact.email
     company_id = contact["company_id"] if isinstance(contact, dict) else contact.company_id
     content_type = ""
@@ -178,6 +184,7 @@ async def fetchMessages(user_id, provider, contact, folder: Optional[str] = None
 
 
 async def SyncMail(user_id, provider, new_contact: bool = False, contacts: list = []):
+    print("Start Sync Mail")
     print(contacts)
     try:
         previous_sync = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
@@ -218,9 +225,11 @@ async def SyncMail(user_id, provider, new_contact: bool = False, contacts: list 
         return True
     except Exception as e:
         print(traceback.format_exc)
+        await supabase_sync(user_id, "error")
         print("Failed to Sync Mail", e)
 
 def sync_notification(user_id, contacts):
+    print("Send Sync Notification")
     admin = supabase.auth.admin
 
     resp = admin.get_user_by_id(user_id)
@@ -315,10 +324,12 @@ def sync_notification(user_id, contacts):
 
 
 async def handle_message_upload(contact, message, content_type, content_html, message_id, provider):
+    print("Handle Message Upload")
     clean_text = html_to_text_microsoft(content_type, content_html)
 
     contact_id = contact["contact_id"] if isinstance(contact, dict) else contact.contact_id
     company_id = contact["company_id"] if isinstance(contact, dict) else contact.company_id
+    print("Contact Id:", contact_id)
     res = supabase.table("Tenant_Contact").select("tenant_id").eq("contact_id", contact_id).limit(1).execute()
     tenant_id = (res.data[0]["tenant_id"] if res and getattr(res, "data", None) else None)
 
@@ -437,6 +448,8 @@ async def UploadMail    (
     folder: Optional[str] = None,
     sender_name: str = "",
     collection: str = COLL,) -> float:
+
+    print("Upload Mail to Qdrant")
     text = (body or "").strip()
     if not text:
         return None, 0.0
@@ -474,7 +487,6 @@ async def UploadMail    (
         "Sender_Name": sender_name,
         },
     )
-    print(point)
     if isinstance(point, PointStruct):
         vec_len = len(_to_vec_list(point)) 
         ensure_collection_exists(collection, vec_len, qdrant_client)
@@ -493,6 +505,7 @@ async def UploadMail    (
 
 
 async def getContacts(user_id):
+    print("Get Contacts for User")
     resp = supabase.rpc('get_user_contacts', {'p_auth_id': user_id}).execute()
     if getattr(resp, 'error', None):
         raise RuntimeError(resp.error)
@@ -696,6 +709,7 @@ async def refresh_access_token(user_id: str) -> dict:
 
 #Google Specific Functions
 def gmail_search_query(sender_email: str, received_after_utc: Optional[datetime]) -> str:
+    print("Gmail Search Query")
     q = [f"from:{sender_email}"]
     print(received_after_utc)
 
@@ -711,17 +725,20 @@ def gmail_search_query(sender_email: str, received_after_utc: Optional[datetime]
     return " ".join(q)
 
 async def gmail_client(user_id: str) -> httpx.AsyncClient:
+    print("Gmail Client")
     tokens = await refresh_access_token(user_id)
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     return httpx.AsyncClient(base_url=GMAIL_BASE, headers=headers, timeout=30)
 
 def gmail_get_header(headers: List[Dict[str, str]], name: str) -> str:
+    print("Gmail Get Header")
     for h in headers or []:
         if h.get("name", "").lower() == name.lower():
             return h.get("value", "")
     return ""
 
 def b64url_decode(data_b64url: Optional[str]) -> str:
+    print("Base64 URL Decode")
     if not data_b64url:
         return ""
     padding = "=" * (-len(data_b64url)%4)
@@ -732,6 +749,7 @@ def b64url_decode(data_b64url: Optional[str]) -> str:
         return raw.decode("latin-1", errors="replace")
     
 def gmail_find_html_or_text(payload: Dict[str, Any]) -> Tuple[str, str]:
+    print("Gmail Find HTML or Text")
     if not payload:
         return ("html", "")
     mt = payload.get("mimeType", "")
@@ -755,6 +773,7 @@ def gmail_find_html_or_text(payload: Dict[str, Any]) -> Tuple[str, str]:
     return ("html", "")
 
 def gmail_normalize_list_item(msg_full: Dict[str, Any], folder: Optional[str] = None) -> Dict[str, Any]:
+    print("Gmail Normalize List Item")
     payload = msg_full.get("payload", {}) or {}
     headers = payload.get("headers", []) or []
 
@@ -815,6 +834,7 @@ def gmail_normalize_list_item(msg_full: Dict[str, Any], folder: Optional[str] = 
     }
 #Gmail Fetchers
 async def fetch_messages_for_sender_google(user_id: str, sender_email: str, received_after_utc: Optional[datetime] = None, top: int = PAGE_SIZE, folder: Optional[str] = None,) -> Iterable[Dict[str, Any]]:
+    print("Fetch Messages for Sender Google")
     q = gmail_search_query(sender_email, received_after_utc)
 
     async with await gmail_client(user_id) as client:
@@ -864,6 +884,7 @@ async def fetch_message_body_html_google(
         user_id: str,
         message_id: str,
 ) -> Tuple[str, str, Dict[str, Any]]:
+    print("Fetch Message Body HTML Google")
     async with await gmail_client(user_id) as client:
         r = await client.get(f"/users/me/messages/{message_id}", params={"format": "full"})
         if r.status_code in (429, 403) and r.headers.get("Retry-After"):
@@ -879,6 +900,7 @@ async def fetch_message_body_html_google(
 #Microsoft Specific Functions
 
 async def _graph_client_microsoft(user_id: str) -> httpx.AsyncClient:
+    print("Graph Client Microsoft")
     tokens = await refresh_access_token(user_id)
     headers = {"Authorization": f"bearer {tokens['access_token']}"}
     return httpx.AsyncClient(base_url=Graph, headers=headers, timeout=30)
@@ -889,6 +911,7 @@ async def fetch_messages_for_sender_microsoft(
     top: int = PAGE_SIZE,
     folder: str = "Inbox",
 ) -> Iterable[Dict[str, Any]]:
+    print("Fetch Messages for Sender Microsoft")
     fields = "id,subject,from,sender,toRecipients,receivedDateTime,hasAttachments,bodyPreview,parentFolderId,internetMessageId"
     base_headers = {"ConsistencyLevel": "eventual"}  # needed for search & filter+orderby combos
 
@@ -914,6 +937,7 @@ async def fetch_messages_for_sender_microsoft(
     }
 
     async with await _graph_client_microsoft(user_id) as client:
+        print("Inside Fetch Messages for Sender Microsoft")
         url = f"/me/messages"
         try:
             while True:
@@ -968,6 +992,7 @@ async def fetch_messages_for_sender_microsoft(
 
 
 async def fetch_message_body_html_microsoft(user_id: str, message_id: str) -> Tuple[str, str]:
+    print("Fetch Message Body HTML Microsoft")
     async with await _graph_client_microsoft(user_id) as client:
         r = await client.get(
             f"/me/messages/{message_id}",
@@ -983,6 +1008,7 @@ async def fetch_message_body_html_microsoft(user_id: str, message_id: str) -> Tu
     
 
 def html_to_text_microsoft(content_type: str, body: str) -> str:
+    print("HTML to Text Microsoft")
     if content_type.lower() == "html":
         # Basic sanitize: strip tags, collapse whitespace
         soup = BeautifulSoup(body or "", "html.parser")
@@ -993,6 +1019,7 @@ def html_to_text_microsoft(content_type: str, body: str) -> str:
 
 #Qdrant Search
 def qdrant_email_exists(unique_message_id, company_id) -> bool:
+    print("Qdrant Email Exists Check")
     res = qdrant_client.scroll(
         collection_name="email_chunks_v1",
         limit=1,
