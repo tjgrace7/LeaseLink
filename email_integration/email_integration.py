@@ -333,7 +333,7 @@ async def handle_message_upload(contact, message, content_type, content_html, me
     print("Contact Id:", contact_id)
     res = supabase.table("Tenant_Contact").select("tenant_id").eq("contact_id", contact_id).limit(1).execute()
     tenant_id = (res.data[0]["tenant_id"] if res and getattr(res, "data", None) else None)
-
+    print(tenant_id)
     from_field = (message.get("sender") or message.get("from") or {})
     email_addr = ((from_field.get("emailAddress") or {}).get("address")) or ""
     name_val = ((from_field.get('emailAddress') or {}).get("name")) or ""
