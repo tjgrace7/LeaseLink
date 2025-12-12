@@ -195,7 +195,7 @@ def enqueue_next_pending_job(limit: int = JOB_CLAIM_BATCH) -> int:
         return 0
 
 
-def export_lease(job_id, lease_request, group_id):
+def export_lease(job_id, lease_request, group_id, first_lease=False):
     
     #Thin wrapper that calls upload_lease_manager.load_pdf().
     #Internal page work remains parallelized within your worker_service.
@@ -225,6 +225,8 @@ def export_lease(job_id, lease_request, group_id):
             claude_model,
             group_id
         )
+        if first_lease:
+            return {"message": "First Lease Upload Completed"}
 
     except Exception as e:
         file_path = lease_request.get("file_path")
@@ -445,7 +447,7 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
         # Run in thread to avoid blocking the event loop
 
         try:
-            result = export_lease(job_id=job_id, lease_request=lease_data, group_id=group_id)
+            result = export_lease(job_id=job_id, lease_request=lease_data, group_id=group_id, first_lease=True)
             job_status[job_id]["status"] = "success"
             job_status[job_id]["result"] = result
             job_status[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
