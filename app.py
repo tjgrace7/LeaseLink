@@ -416,7 +416,7 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
         
         # Check user's First_Value status
         user_data_resp = supabase_client.table("User_Data").select("First_Value").eq('auth_id', auth_id).single().execute()
-        print(user_data_resp)
+
         # For supabase-py v2: user_data_resp.data holds the row (or None)
         user_row = getattr(user_data_resp, "data", None)
 
@@ -445,7 +445,18 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
         # Run in thread to avoid blocking the event loop
 
         try:
-            export_lease(job_id=job_id, lease_request=lease_data, group_id=group_id)
+            result = export_lease(job_id=job_id, lease_request=lease_data, group_id=group_id)
+            job_status[job_id]["status"] = "success"
+            job_status[job_id]["result"] = result
+            job_status[job_id]["finished_at"] = datetime.now(timezone.utc).isoformat()
+
+            supabase_client.table("Upload_Job_Status").update({"job_info": job_status[job_id]}).eq("job_id", job_id).execute()
+
+
+            return JSONResponse(
+            status_code=200,
+            content={"message": "Lease upload started successfully", "job_id": job_id, "result": result}
+        )
         except Exception as e:
             log.error(f"Export lease failed in thread: {e}")
             job_status[job_id]["status"] = "error"
@@ -455,10 +466,7 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
             ).eq("job_id", job_id).execute()
         
         
-        return JSONResponse(
-            status_code=200,
-            content={"message": "Lease upload started successfully", "job_id": job_id}
-        )
+        
     
     except HTTPException:
         # Re-raise HTTP exceptions as-is
