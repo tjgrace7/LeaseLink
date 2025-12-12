@@ -449,7 +449,7 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
 
         try:
             t0 = time.time()
-            result = run_in_threadpool(export_lease, job_id, lease_data, group_id, True)
+            result = await run_in_threadpool(export_lease, job_id, lease_data, group_id, True)
             print("End export_lease, seconds", time.time() - t0)
             job_status[job_id]["status"] = "success"
             job_status[job_id]["result"] = result
