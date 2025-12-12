@@ -327,7 +327,7 @@ def sync_notification(user_id, contacts):
 async def handle_message_upload(contact, message, content_type, content_html, message_id, provider):
     print("Handle Message Upload")
     clean_text = html_to_text_microsoft(content_type, content_html)
-
+    print("Contact:", contact)
     contact_id = contact["contact_id"] if isinstance(contact, dict) else contact.contact_id
     company_id = contact["company_id"] if isinstance(contact, dict) else contact.company_id
     print("Contact Id:", contact_id)
