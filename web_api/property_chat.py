@@ -31,7 +31,7 @@ def get_propertyTenants(property_id, company_id):
     print("Tenants:", tenants)
     return tenants
 
-def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, top_k=5):
+def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, emailCollection, top_k=5):
     results = qdrant.search(
         collection_name=collection_name,
         query_vector=('dense-vector', message_vector),
@@ -49,7 +49,72 @@ def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, a
             ]
         ),
     )
-    
+    emailresults = qdrant.search(
+                collection_name=emailCollection,
+                query_vector= message_vector,
+                limit=top_k,
+                with_payload=True,
+                with_vectors=False,
+                query_filter=Filter(
+                    must=[
+                        FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)),
+                        FieldCondition(key="company_id", match=MatchValue(value=company_id))
+                    ]
+                )
+            )
+    now = datetime.now()
+    system_prompt = f"""You are a helpful assistant answering questions about lease documents.
+
+{results}
+
+The context above includes a list of content chunks, each labeled with:
+- Document Name (source_doc)
+- pageNumber
+- highlight_id
+
+If two documents provide conflicting information, use the most recent one.
+If context is null. Tell the user there was an error retriving lease context. And factor that into your response about the question
+
+If a user asks a time-based question (e.g., about rent, terms, insurance), use the following as the current date:
+**{now}**
+
+Many Time Based Questions will reference documents that say term between September 2021 - August 2025
+
+If it is a Day in July 2025. That falls within that period. If the month and Year are outside that date and time. It does not fall within that period.
+---
+
+Here are previous messages related to this tenant:
+Each message includes a role:
+- "user" means it was written by the property manager
+- "assistant" means it was your previous response
+
+
+Here are emails with contacts of the tenant. 
+
+If the referenced email context applies use that in your reference. Tell us who the email is from and the subject
+{emailresults}
+---
+
+Answer the question clearly.
+
+At the end of your answer, if you used any specific context chunks, return them in the following JSON format. The `highlight_text` should be the exact text from the chunk you used in your answer. Use tenantid from context to answer
+
+Do NOT include any chunks that were not used in your answer.
+
+If two chunks share the same `source_doc` and `pageNumber`, and both were used in your answer, combine their `highlight_text` fields into one string, and return a single JSON object for that page! DO NOT RETURN TWO JSON STRINGS WITH THE SAME source_doc and pageNumber
+
+Use this format exactly:
+
+```json
+[
+  Curly Bracket
+    "source_doc": "leaselink/dairy_queen/",
+    "pageNumber": 12,
+    "highlight_text": "abc-123"
+  Curly bracket close
+]"""
+
+
 
 def rephrase_question(question: str, claude_model: str) -> str:
         message_summary = claude.messages.create(

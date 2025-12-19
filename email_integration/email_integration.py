@@ -95,7 +95,7 @@ async def supabase_sync(user_id, sync_status, provider):
         }).execute()
 
 
-async def previous_subabase_sync(user_id):
+async def previous_subabase_sync(user_id, provider):
     print("Previous Supabase Sync")
     internal_user_id = await get_internal_user_id(user_id)
 
