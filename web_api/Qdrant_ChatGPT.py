@@ -15,6 +15,7 @@ def underscorize(s: str) -> str:
     return re.sub(r'\s+', '_', s.strip())
 
 
+    
 @profile
 def _extract_braced_json(text: str, start_idx: int):
     """
