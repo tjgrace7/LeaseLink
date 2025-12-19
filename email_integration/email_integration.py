@@ -66,28 +66,34 @@ async def get_internal_user_id(user_id):
         return
     return internal_user_id
 async def supabase_sync(user_id, sync_status, provider):
-    print("Supabase Sync")
     internal_user_id = await get_internal_user_id(user_id)
+    now = datetime.now(timezone.utc).isoformat()
 
-    # Use UTC-aware datetime
-    now = datetime.now(timezone.utc)
-    print(now.isoformat())
-    res = supabase.table("Email_Sync_Logs").update(
-        {
-            'last_sync': now.isoformat(),
+    # 1) Try update
+    res = supabase.table("Email_Sync_Logs") \
+        .update({"last_sync": now, "sync_status": sync_status}) \
+        .eq("user_id", internal_user_id) \
+        .eq("provider", provider) \
+        .execute()
+
+    # supabase-py returns updated rows in res.data for update (if you use .select())
+    # Safer: request the updated row back
+    if not getattr(res, "data", None):
+        res = supabase.table("Email_Sync_Logs") \
+            .update({"last_sync": now, "sync_status": sync_status}) \
+            .eq("user_id", internal_user_id) \
+            .eq("provider", provider) \
+            .select("user_id") \
+            .execute()
+
+    # 2) If nothing updated, insert
+    if not res.data:  # no matching row
+        supabase.table("Email_Sync_Logs").insert({
+            "user_id": internal_user_id,
+            "provider": provider,
+            "last_sync": now,
             "sync_status": sync_status,
-
-        }).eq('user_id', internal_user_id).eq('provider', provider).execute()
-    if not getattr(res, "data", None) or len(res.data) == 0:
-        # Insert new record
-        res = supabase.table("Email_Sync_Logs").insert(
-            {
-                'user_id': internal_user_id,
-                'last_sync': now.isoformat(),
-                "sync_status": sync_status,
-                "provider": provider
-            }
-        ).execute()
+        }).execute()
 
 
 async def previous_subabase_sync(user_id):
