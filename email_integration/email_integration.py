@@ -70,7 +70,7 @@ async def supabase_sync(user_id, sync_status, provider):
     now = datetime.now(timezone.utc).isoformat()
 
     # 1) Try update
-    res = supabase.table("Email_Sync_Logs") \
+    res = await supabase.table("Email_Sync_Logs") \
         .update({"last_sync": now, "sync_status": sync_status}) \
         .eq("user_id", internal_user_id) \
         .eq("provider", provider) \
@@ -79,7 +79,7 @@ async def supabase_sync(user_id, sync_status, provider):
     # supabase-py returns updated rows in res.data for update (if you use .select())
     # Safer: request the updated row back
     if not getattr(res, "data", None):
-        supabase.table("Email_Sync_Logs").insert({
+        await supabase.table("Email_Sync_Logs").insert({
             "user_id": internal_user_id,
             "provider": provider,
             "last_sync": now,
