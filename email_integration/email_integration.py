@@ -17,7 +17,7 @@ from bs4 import BeautifulSoup
 from fastapi.responses import RedirectResponse
 import jwt
 import base64
-from qdrant_client.models import Filter, MatchValue, FieldCondition
+from qdrant_client.models import Filter, MatchValue, FieldCondition, models
 import resend
 import traceback
 
@@ -65,7 +65,7 @@ async def get_internal_user_id(user_id):
         print(f"[supabase_sync] No matching internal user_id for auth_id={user_id}")
         return
     return internal_user_id
-async def supabase_sync(user_id, sync_status):
+async def supabase_sync(user_id, sync_status, provider):
     print("Supabase Sync")
     internal_user_id = await get_internal_user_id(user_id)
 
@@ -76,7 +76,8 @@ async def supabase_sync(user_id, sync_status):
         {
             'user_id': internal_user_id,
             'last_sync': now.isoformat(),
-            "sync_status": sync_status
+            "sync_status": sync_status,
+            'provider': provider
         },
         on_conflict="user_id"
     ).execute()
@@ -167,7 +168,7 @@ async def fetchMessages(user_id, provider, contact, folder: Optional[str] = None
                 continue
             content_type, content_html, full_msg = await fetch_message_body_html_microsoft(user_id, graph_id)
             merged = {**message, **full_msg}
-            await handle_message_upload(contact, merged, content_type, content_html, message_id, provider)
+            await handle_message_upload(contact, merged, content_type, content_html, message_id, provider, user_id)
     if provider == "google":
         async for message in fetch_messages_for_sender_google(user_id=user_id, sender_email=email, folder=folder, received_after_utc=previous_sync):
             graph_id = message.get('id')
@@ -178,7 +179,7 @@ async def fetchMessages(user_id, provider, contact, folder: Optional[str] = None
                 continue
             ct, html, _env = await fetch_message_body_html_google(user_id, graph_id)
             
-            await handle_message_upload(contact, _env, ct, html, message_id, provider)
+            await handle_message_upload(contact, _env, ct, html, message_id, provider, user_id)
     print("Finish Fetch Messages")
     return True
 
@@ -216,17 +217,17 @@ async def SyncMail(user_id, provider, new_contact: bool = False, contacts: list 
 
         if(len(contacts) <= 0):
             contacts = await getContacts(user_id)
-        await supabase_sync(user_id, "in_progress")
+        await supabase_sync(user_id, "in_progress", provider)
         for contact in contacts:
             await fetchMessages(user_id=user_id, provider=provider, contact=contact, previous_sync=previous_sync)
-        await supabase_sync(user_id, 'complete')
+        await supabase_sync(user_id, 'complete', provider)
         sync_notification(user_id, contacts)
         print("Messages Fetched")
 
         return True
     except Exception as e:
         print(traceback.format_exc)
-        await supabase_sync(user_id, "error")
+        await supabase_sync(user_id, "error", provider)
         print("Failed to Sync Mail", e)
 
 def sync_notification(user_id, contacts):
@@ -324,7 +325,7 @@ def sync_notification(user_id, contacts):
     print(send)
 
 
-async def handle_message_upload(contact, message, content_type, content_html, message_id, provider):
+async def handle_message_upload(contact, message, content_type, content_html, message_id, provider, user_id):
     print("Handle Message Upload")
     clean_text = html_to_text_microsoft(content_type, content_html)
     print("Contact:", contact)
@@ -420,6 +421,7 @@ async def handle_message_upload(contact, message, content_type, content_html, me
             thread_id=thread_id,
             folder=folder,
             sender_name=name_val,
+            user_id=user_id,
         )
         return True
     except Exception as e:
@@ -448,7 +450,9 @@ async def UploadMail    (
     thread_id: Optional[str] = None,
     folder: Optional[str] = None,
     sender_name: str = "",
-    collection: str = COLL,) -> float:
+    user_id = None,
+    collection: str = COLL,
+    ) -> float:
 
     print("Upload Mail to Qdrant")
     text = (body or "").strip()
@@ -486,6 +490,7 @@ async def UploadMail    (
         "thread_id": thread_id,
         "folder": folder,
         "Sender_Name": sender_name,
+        "auth_id": user_id
         },
     )
     if isinstance(point, PointStruct):
@@ -1006,7 +1011,44 @@ async def fetch_message_body_html_microsoft(user_id: str, message_id: str) -> Tu
         content_type = body.get("contentType", "html")
         content = body.get("content", "") or ""
         return content_type, content, m
-    
+
+async def remove_integration_tokens(user_id: str, provider: str, delete_qdrant):
+    print("Remove Integration Tokens")
+    resp = supabase.table("Access_Tokens").delete().eq("user_auth_id", user_id).eq("provider", provider).execute()
+    if getattr(resp, "error", None):
+        print("Error deleting tokens:", resp.error)
+    if delete_qdrant:
+        try:
+            count = qdrant_client.count(
+                collection_name="email_chunks_v1",
+                count_filter=qdrant_filter,
+                exact=True
+            )
+            print("Matching points:", count.count)
+
+            # Build a payload filter: auth_id == user_id AND provider == provider
+            qdrant_filter = models.Filter(
+                must=[
+                    models.FieldCondition(
+                        key="auth_id",
+                        match=models.MatchValue(value=user_id),
+                    ),
+                    models.FieldCondition(
+                        key="provider",
+                        match=models.MatchValue(value=provider),
+                    ),
+                ]
+            )
+
+            qdrant_client.delete(
+                collection_name="email_chunks_v1",
+                points_selector=models.FilterSelector(filter=qdrant_filter),
+                wait=True,  # wait for completion
+            )
+
+            print(f"Deleted Qdrant points for auth_id={user_id}, provider={provider}")
+        except Exception as e:
+            print("Error deleting Qdrant collection:", e)    
 
 def html_to_text_microsoft(content_type: str, body: str) -> str:
     print("HTML to Text Microsoft")

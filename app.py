@@ -640,7 +640,30 @@ async def new_contact_email_sync(
     # 4. Trigger sync (fire-and-forget style)
     return await email_integration.SyncMail(auth_id, provider, True, contacts)
 
+async def delete_email_integration(request: Request, authorization: Optional[str] = Header(default=None)):
+    body = await request.body()
+    print("raw body: ", body)
+    delete_request = await request.json()
+    auth_id = delete_request.get("auth_id")
+    delete_qdrant = delete_request.get("delete_qdrant", False)
+    
 
+    token = authorization.replace("Bearer", "").strip() if authorization else None
+    if not token:
+        return JSONResponse(status_code=401, content={"error": "Missing or invalid token"})
+
+    auth = verify_supabase_jwt(token)
+    if not auth:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    if auth["sub"] != auth_id:
+        raise HTTPException(status_code=403, detail="auth_id does not match token")
+    res = supabase_client.table("Access_Tokens").select("provider").eq('user_auth_id', auth_id).limit(1).execute()
+    if len(res.data) <= 0:
+        return
+    else:
+        provider = res.data[0].get('provider')
+        await email_integration.SyncMail(auth_id, provider, delete_qdrant)
 
 def handle_entity_question(message_request, supabase_client, qdrant_client, OpenAIclient, collectionName):
     try:
