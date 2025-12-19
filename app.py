@@ -28,6 +28,7 @@ from datetime import datetime, timedelta, timezone
 from openai import OpenAI
 from anthropic import Anthropic
 from qdrant_client import QdrantClient
+from fastapi.responses import PlainTextResponse
 
 import common.Supabase_api as Supabase_api
 from worker_service import upload_lease_manager
@@ -345,7 +346,13 @@ def get_job_status(job_id: str):
     if not status:
         return {"Status": "unknown"}
     return status
+@app.get("/", include_in_schema=False)
+def root():
+    return PlainTextResponse("ok")
 
+@app.get("/health", include_in_schema=False)
+def health():
+    return {"status": "ok"}
 
 @app.post("/internal/cron/tick")
 def cron_tick(x_cron_secret: str = Header(default="")):

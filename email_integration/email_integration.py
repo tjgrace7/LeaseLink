@@ -72,15 +72,22 @@ async def supabase_sync(user_id, sync_status, provider):
     # Use UTC-aware datetime
     now = datetime.now(timezone.utc)
     print(now.isoformat())
-    supabase.table("Email_Sync_Logs").upsert(
+    res = supabase.table("Email_Sync_Logs").update(
         {
-            'user_id': internal_user_id,
             'last_sync': now.isoformat(),
             "sync_status": sync_status,
-            'provider': provider
-        },
-        on_conflict=["user_id", 'provider']
-    ).execute()
+
+        }).eq('user_id', internal_user_id).eq('provider', provider).select('*').execute()
+    if not getattr(res, "data", None) or len(res.data) == 0:
+        # Insert new record
+        res = supabase.table("Email_Sync_Logs").insert(
+            {
+                'user_id': internal_user_id,
+                'last_sync': now.isoformat(),
+                "sync_status": sync_status,
+                "provider": provider
+            }
+        ).execute()
 
 
 async def previous_subabase_sync(user_id):
@@ -296,7 +303,7 @@ def sync_notification(user_id, contacts):
             <tr>
               <td align="center" style="padding:10px 30px 30px 30px;">
                 <a 
-                  href="https://app.leaselink.ai"
+                  href="https://www.leaselink.ai"
                   style="display:inline-block;padding:12px 22px;background:#3B82F6;color:#ffffff;text-decoration:none;font-size:16px;font-weight:600;border-radius:8px;"
                 >
                   Open Lease Link
