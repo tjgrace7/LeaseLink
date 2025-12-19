@@ -79,7 +79,7 @@ async def supabase_sync(user_id, sync_status, provider):
             "sync_status": sync_status,
             'provider': provider
         },
-        on_conflict="user_id"
+        on_conflict=["user_id", 'provider']
     ).execute()
 
 
@@ -1015,8 +1015,11 @@ async def fetch_message_body_html_microsoft(user_id: str, message_id: str) -> Tu
 async def remove_integration_tokens(user_id: str, provider: str, delete_qdrant):
     print("Remove Integration Tokens")
     resp = supabase.table("Access_Tokens").delete().eq("user_auth_id", user_id).eq("provider", provider).execute()
+    
     if getattr(resp, "error", None):
         print("Error deleting tokens:", resp.error)
+    uid = await get_internal_user_id(user_id)
+    await supabase_sync(user_id, "disconnected", provider)
     if delete_qdrant:
         try:
             count = qdrant_client.count(

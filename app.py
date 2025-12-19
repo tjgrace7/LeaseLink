@@ -639,7 +639,7 @@ async def new_contact_email_sync(
     print("Sync Mail")
     # 4. Trigger sync (fire-and-forget style)
     return await email_integration.SyncMail(auth_id, provider, True, contacts)
-
+@app.post('api/integrations/email/disconnect')
 async def delete_email_integration(request: Request, authorization: Optional[str] = Header(default=None)):
     body = await request.body()
     print("raw body: ", body)
