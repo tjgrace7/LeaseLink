@@ -76,15 +76,6 @@ async def supabase_sync(user_id, sync_status, provider):
         .eq("provider", provider) \
         .execute()
 
-    # supabase-py returns updated rows in res.data for update (if you use .select())
-    # Safer: request the updated row back
-    if not getattr(res, "data", None):
-        res = supabase.table("Email_Sync_Logs") \
-            .update({"last_sync": now, "sync_status": sync_status}) \
-            .eq("user_id", internal_user_id) \
-            .eq("provider", provider) \
-            .select("user_id") \
-            .execute()
 
     # 2) If nothing updated, insert
     if not res.data:  # no matching row
