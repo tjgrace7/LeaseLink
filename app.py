@@ -663,7 +663,7 @@ async def delete_email_integration(request: Request, authorization: Optional[str
         return
     else:
         provider = res.data[0].get('provider')
-        await email_integration.SyncMail(auth_id, provider, delete_qdrant)
+        await email_integration.remove_integration_tokens(auth_id, provider, delete_qdrant)
 
 def handle_entity_question(message_request, supabase_client, qdrant_client, OpenAIclient, collectionName):
     try:
