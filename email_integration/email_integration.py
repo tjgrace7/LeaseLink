@@ -77,7 +77,7 @@ async def supabase_sync(user_id, sync_status, provider):
             'last_sync': now.isoformat(),
             "sync_status": sync_status,
 
-        }).eq('user_id', internal_user_id).eq('provider', provider).select('*').execute()
+        }).eq('user_id', internal_user_id).eq('provider', provider).execute()
     if not getattr(res, "data", None) or len(res.data) == 0:
         # Insert new record
         res = supabase.table("Email_Sync_Logs").insert(
