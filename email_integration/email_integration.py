@@ -68,14 +68,14 @@ async def get_internal_user_id(user_id):
 async def supabase_sync(user_id, sync_status, provider):
     internal_user_id = await get_internal_user_id(user_id)
     now = datetime.now(timezone.utc).isoformat()
-
+    print("Try Updating Sync Log")
     # 1) Try update
     supabase.table("Email_Sync_Logs") \
         .update({"last_sync": now, "sync_status": sync_status}) \
         .eq("user_id", internal_user_id) \
         .eq("provider", provider) \
         .execute()
-    
+    print("Fetching Sync Log")
     res = supabase.table("Email_Sync_Logs") \
     .select("*") \
     .eq("user_id", internal_user_id) \
@@ -86,6 +86,7 @@ async def supabase_sync(user_id, sync_status, provider):
     # supabase-py returns updated rows in res.data for update (if you use .select())
     # Safer: request the updated row back
     if not getattr(res, "data", None):
+        print("Insert New Sync Log")
         supabase.table("Email_Sync_Logs").insert({
             "user_id": internal_user_id,
             "provider": provider,
@@ -99,7 +100,7 @@ async def previous_subabase_sync(user_id):
     internal_user_id = await get_internal_user_id(user_id)
 
 
-    sync_res = supabase.table("Email_Sync_Logs").select("*").eq("user_id", internal_user_id).limit(1).execute()
+    sync_res = supabase.table("Email_Sync_Logs").select("*").eq("user_id", internal_user_id).eq('provider', provider).execute()
     if len(sync_res.data) >0:
         return sync_res.data[0]
     else: 
@@ -202,7 +203,7 @@ async def SyncMail(user_id, provider, new_contact: bool = False, contacts: list 
     try:
         previous_sync = datetime(1970, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
         if not new_contact:
-            sync = await previous_subabase_sync(user_id)
+            sync = await previous_subabase_sync(user_id, provider)
         
 
             if sync:

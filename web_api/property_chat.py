@@ -31,6 +31,26 @@ def get_propertyTenants(property_id, company_id):
     print("Tenants:", tenants)
     return tenants
 
+def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, top_k=5):
+    results = qdrant.search(
+        collection_name=collection_name,
+        query_vector=('dense-vector', message_vector),
+        limit=top_k,
+        with_payload=True,
+        with_vectors=False,
+        query_filter=Filter(
+            must=[
+                FieldCondition(
+                    key="tenant_id",
+                    match=MatchValue(value=tenant_id)),
+                FieldCondition(
+                    key="managementcompany_id",
+                    match=MatchValue(value=company_id))
+            ]
+        ),
+    )
+    
+
 def rephrase_question(question: str, claude_model: str) -> str:
         message_summary = claude.messages.create(
             model=claude_model,
@@ -71,9 +91,21 @@ Return a **single, semantically precise** version of the user's question that wi
         prompt_tokens = token_usage.input_tokens
         completion_tokens = token_usage.output_tokens
         input = message_summary.content[0].text
-        return input, prompt_tokens, completion_tokens
-def property_chat_request(collection_name, property_id, company_id, message, oldData, claude_model, emailCollection):
-    tenants = get_propertyTenants(property_id, company_id)
-    ai_message, prompt_tokens, completion_tokens = rephrase_question(message, claude_model)
+        message_vector = OpenAIclient.embeddings.create(
+            input=input,
+            model="text-embedding-3-large"
+        ).data[0].embedding
 
-    
+        return input, message_vector prompt_tokens, completion_tokens
+
+
+
+def property_chat_request(collection_name, property_id, company_id, message, oldData, claude_model, emailCollection):
+    try:
+        tenants = get_propertyTenants(property_id, company_id)
+        ai_message, message_vector, prompt_tokens, completion_tokens = rephrase_question(message, claude_model)
+        
+
+    except Exception as e:
+        print("Error in property chat request:", e)
+        return {"error": "Failed to process property chat request."}
