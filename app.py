@@ -1,4 +1,5 @@
 # ---------- put these caps at the VERY TOP (before heavy imports) ----------
+print("BOOT 1: module import Start", flush=True)
 import os, urllib.parse, secrets, httpx, time
 os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
@@ -8,10 +9,7 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 from dotenv import load_dotenv
 
 load_dotenv()
-from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks, Response
-from fastapi.responses import RedirectResponse
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+
 from email_integration import PKCE
 from typing import Optional
 from queue import Queue
@@ -36,13 +34,19 @@ from web_api import Qdrant_ChatGPT
 from email_integration import email_integration
 import hmac
 import hashlib
+from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks, Response
 
+from fastapi.responses import RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+print("Boot 2: imports complete", flush=True)
 # --------------------------- Logging ---------------------------------
 log = logging.getLogger("leaselink-app")
 log.setLevel(logging.INFO)
 
 # --------------------------- App Setup --------------------------------
 app = FastAPI()
+print("Boot 3: FastAPI app created", flush=True)
 claude_model = "claude-sonnet-4-20250514"
 
 app.add_middleware(
