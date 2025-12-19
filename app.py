@@ -334,10 +334,10 @@ signal.signal(signal.SIGTERM, signal_handler)
 
 
 # ------------------------------ Routes --------------------------------
-@app.get("/")
-def root():
-    return {"message": "API is running"}
 
+@app.get("/", include_in_schema=False)
+def root():
+    return PlainTextResponse("ok")
 
 @app.head("/")
 @app.get("/job-status/{job_id}")
@@ -346,9 +346,7 @@ def get_job_status(job_id: str):
     if not status:
         return {"Status": "unknown"}
     return status
-@app.get("/", include_in_schema=False)
-def root():
-    return PlainTextResponse("ok")
+
 
 @app.get("/health", include_in_schema=False)
 def health():
