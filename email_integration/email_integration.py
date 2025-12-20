@@ -79,10 +79,9 @@ async def supabase_sync(user_id, sync_status, provider):
     res = supabase.table("Email_Sync_Logs") \
     .select("*") \
     .eq("user_id", internal_user_id) \
-    .eq("provider", provider) \
-    .limit(1) \
+    .eq("provider", provider)  \
     .execute()
-
+    print(res)
     # supabase-py returns updated rows in res.data for update (if you use .select())
     # Safer: request the updated row back
     if not getattr(res, "data", None):
@@ -232,9 +231,9 @@ async def SyncMail(user_id, provider, new_contact: bool = False, contacts: list 
         await supabase_sync(user_id, "in_progress", provider)
         for contact in contacts:
             await fetchMessages(user_id=user_id, provider=provider, contact=contact, previous_sync=previous_sync)
+        print("Messages Fetched Successfully")
         await supabase_sync(user_id, 'complete', provider)
         sync_notification(user_id, contacts)
-        print("Messages Fetched")
 
         return True
     except Exception as e:
