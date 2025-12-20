@@ -170,6 +170,7 @@ async def fetchMessages(user_id, provider, contact, folder: Optional[str] = None
     company_id = contact["company_id"] if isinstance(contact, dict) else contact.company_id
     content_type = ""
     content_html = ""
+    print(previous_sync)
     if provider == "microsoft":
         async for message in fetch_messages_for_sender_microsoft(user_id=user_id, sender_email=email, folder=folder, received_after_utc=previous_sync):
             graph_id = message.get("id")
@@ -1100,18 +1101,9 @@ async def remove_integration_tokens(user_id: str, provider: str, delete_qdrant):
     
     if getattr(resp, "error", None):
         print("Error deleting tokens:", resp.error)
-    uid = await get_internal_user_id(user_id)
     await supabase_sync(user_id, "disconnected", provider)
     if delete_qdrant:
         try:
-            count = qdrant_client.count(
-                collection_name="email_chunks_v1",
-                count_filter=qdrant_filter,
-                exact=True
-            )
-            print("Matching points:", count.count)
-
-            # Build a payload filter: auth_id == user_id AND provider == provider
             qdrant_filter = models.Filter(
                 must=[
                     models.FieldCondition(
@@ -1124,6 +1116,16 @@ async def remove_integration_tokens(user_id: str, provider: str, delete_qdrant):
                     ),
                 ]
             )
+            print("Qdrant Filter:", qdrant_filter)
+            count = qdrant_client.count(
+                collection_name="email_chunks_v1",
+                count_filter=qdrant_filter,
+                exact=True
+            )
+            print("Matching points:", count.count)
+
+            # Build a payload filter: auth_id == user_id AND provider == provider
+            
 
             qdrant_client.delete(
                 collection_name="email_chunks_v1",
