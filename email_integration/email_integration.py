@@ -20,6 +20,7 @@ import base64
 from qdrant_client.models import Filter, MatchValue, FieldCondition, models
 import resend
 import traceback
+from typing import AsyncIterator
 
 TENANT = os.getenv("MS_TENANT", "common")
 
@@ -863,53 +864,103 @@ def gmail_normalize_list_item(msg_full: Dict[str, Any], folder: Optional[str] = 
         "message_id": normalized_msg_id
     }
 #Gmail Fetchers
-async def fetch_messages_for_sender_google(user_id: str, sender_email: str, received_after_utc: Optional[datetime] = None, top: int = PAGE_SIZE, folder: Optional[str] = None,) -> Iterable[Dict[str, Any]]:
-    print("Fetch Messages for Sender Google")
-    q = gmail_search_query(sender_email, received_after_utc)
+from typing import Any, Dict, AsyncIterator, Optional, List
+from datetime import datetime
+import asyncio
 
-    async with await gmail_client(user_id) as client:
-        url = "/users/me/messages"
-        params: Dict[str, Any] = {"q": q, "maxResults": min(top, 100)}
-        if folder:
-            params['labelIds'] = [folder]
-        
-        while True:
-            r = await client.get(url, params=params)
-            if r.status_code in (429, 403) and r.headers.get("Retry-After"):
-                retry = int(r.headers.get("Retry-After", "2"))
-                await asyncio.sleep(retry)
-                continue
-            r.raise_for_status()
-            data = r.json()
-            ids = [m["id"] for m in data.get("messages", [])]
-            if not ids:
-                return
-            
-            rows: List[Dict[str, Any]] = []
-            for mid in ids:
-                gr = await client.get(
-                    f"/users/me/messages/{mid}",
-                    params={"format": "metadata", "metadataHeaders": ["From", "To", "Subject", "Date", "Message-Id"]}
+PAGE_SIZE = 100
+
+
+async def fetch_messages_for_sender_google(
+    user_id: str,
+    sender_email: str,
+    received_after_utc: Optional[datetime] = None,
+    top: int = PAGE_SIZE,
+    folder: Optional[str] = None,
+) -> AsyncIterator[Dict[str, Any]]:
+    print("Fetch Messages for Sender Google")
+    try:
+        q = gmail_search_query(sender_email, received_after_utc)
+        remaining = top
+
+        async with await gmail_client(user_id) as client:
+            url = "/users/me/messages"
+            params: Dict[str, Any] = {
+                "q": q,
+                "maxResults": min(remaining, 100),
+            }
+
+            if folder:
+                params["labelIds"] = [folder]
+
+            while remaining > 0:
+                # --- List messages (with retry) ---
+                while True:
+                    r = await client.get(url, params=params)
+                    if r.status_code in (429, 403) and r.headers.get("Retry-After"):
+                        await asyncio.sleep(int(r.headers.get("Retry-After", "2")))
+                        continue
+                    r.raise_for_status()
+                    break
+
+                data = r.json()
+                ids = [m["id"] for m in data.get("messages", [])]
+                if not ids:
+                    return
+
+                rows: List[Dict[str, Any]] = []
+
+                # --- Fetch message metadata ---
+                for mid in ids:
+                    if remaining <= 0:
+                        return
+
+                    while True:
+                        gr = await client.get(
+                            f"/users/me/messages/{mid}",
+                            params={
+                                "format": "metadata",
+                                "metadataHeaders": [
+                                    "From",
+                                    "To",
+                                    "Subject",
+                                    "Date",
+                                    "Message-Id",
+                                ],
+                            },
+                        )
+                        if gr.status_code in (429, 403) and gr.headers.get("Retry-After"):
+                            await asyncio.sleep(int(gr.headers.get("Retry-After", "2")))
+                            continue
+                        gr.raise_for_status()
+                        break
+
+                    rows.append(gmail_normalize_list_item(gr.json()))
+
+                # --- Sort newest → oldest ---
+                rows.sort(
+                    key=lambda x: x.get("receivedDateTime", ""),
+                    reverse=True,
                 )
-                if gr.status_code in (429, 403) and gr.headers.get("Retry-After"):
-                    retry = int(gr.headers.get("Retry-After", "2"))
-                    await asyncio.sleep(retry)
-                    gr = await client.get(
-                        f"/users/me/messages/{mid}",
-                        params={"format": "metadata", "metadataHeaders": ["From", "To", "Subject", "Date"]}
-                    )
-                gr.raise_for_status()
-                rows.append(gmail_normalize_list_item(gr.json()))
-            
-            rows.sort(key=lambda x: x.get("receivedDateTime", ""), reverse = True)
-            for item in rows:
-                yield item
-            
-            page_token = data.get("nextPageToken")
-            if not page_token:
-                return
-            params["pageToken"] = page_token
+
+                for item in rows:
+                    if remaining <= 0:
+                        return
+                    yield item
+                    remaining -= 1
+
+                # --- Pagination ---
+                page_token = data.get("nextPageToken")
+                if not page_token:
+                    return
+
+                params["pageToken"] = page_token
+                params["maxResults"] = min(remaining, 100)
+    except Exception as e:
+        print("Error in fetch_messages_for_sender_google:", e)
+        raise
     print("Completed Fetch Messages for Sender Google")
+
 async def fetch_message_body_html_google(
         user_id: str,
         message_id: str,

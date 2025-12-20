@@ -23,6 +23,54 @@ claude = Anthropic(api_key=CLAUDE_API_KEY)
 qdrant = QdrantClient(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY"))
 supabase = Supabase_api.supabase_client_setup()
 
+from datetime import datetime
+
+def get_recent_field(fieldname, data):
+    if not data:
+        return None
+
+    def get_sort_date(lease):
+        date_str = lease.get("lease_commencement_date") or lease.get("lease_execution_date")
+        if not date_str:
+            return None
+        try:
+            return datetime.fromisoformat(date_str)
+        except ValueError:
+            return None
+
+    value = None
+
+    if len(data) > 1:
+        # filter leases that have a date AND the field
+        valid_leases = [
+            lease for lease in data
+            if get_sort_date(lease) and lease.get(fieldname) is not None
+        ]
+
+        if not valid_leases:
+            return None
+
+        # sort newest → oldest
+        sorted_leases = sorted(
+            valid_leases,
+            key=get_sort_date,
+            reverse=True
+        )
+
+        value = sorted_leases[0].get(fieldname)
+
+    else:
+        value = data[0].get(fieldname)
+
+    # replicate JS "{a,b,c}" → newline list
+    if isinstance(value, str) and value.startswith("{") and value.endswith("}"):
+        value = "\n".join(
+            item.strip()
+            for item in value[1:-1].split(",")
+        )
+
+    return value
+
 def get_propertyTenants(property_id, company_id):
     response = supabase.table("Property_Tenant").select("*").eq("property_id", property_id).eq("company_id", company_id).execute()
     tenants = []
@@ -34,6 +82,9 @@ def get_propertyTenants(property_id, company_id):
 def get_supabase_data(tenants, column_names):
     data = []
     for tenant in tenants:
+        tenant_id = tenant['tenant_id']
+        response = supabase.table("lease_documents").select(column_names).eq("tenant_id", tenant_id).execute()
+        
 
 def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, emailCollection, top_k=5):
     results = qdrant.search(
