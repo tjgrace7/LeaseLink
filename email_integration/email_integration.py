@@ -187,9 +187,10 @@ async def fetchMessages(user_id, provider, contact, folder: Optional[str] = None
             if not graph_id:
                 continue
             if qdrant_email_exists(message_id, company_id):
+                print("Email already exists in Qdrant, skipping:", message_id)
                 continue
             ct, html, _env = await fetch_message_body_html_google(user_id, graph_id)
-            
+            print("Fetched Message Body HTML Google", html)
             await handle_message_upload(contact, _env, ct, html, message_id, provider, user_id)
     print("Finish Fetch Messages")
     return True
@@ -340,6 +341,7 @@ async def handle_message_upload(contact, message, content_type, content_html, me
     print("Handle Message Upload")
     clean_text = html_to_text_microsoft(content_type, content_html)
     print("Contact:", contact)
+    print()
     contact_id = contact["contact_id"] if isinstance(contact, dict) else contact.contact_id
     company_id = contact["company_id"] if isinstance(contact, dict) else contact.company_id
     print("Contact Id:", contact_id)
@@ -408,7 +410,7 @@ async def handle_message_upload(contact, message, content_type, content_html, me
     thread_id = message.get("thread_id") or message.get("threadId")
 
     attachment_names = message.get("attachment_names") or []
-
+    print(clean_text)
 
     try:
         embeddingcost = await UploadMail(
@@ -420,7 +422,7 @@ async def handle_message_upload(contact, message, content_type, content_html, me
             label_ids=label_ids,
             has_attachments = has_attachments,
             to_emails = to_emails,
-             body=clean_text, 
+            body=clean_text, 
             received_datetime=received_datetime,
             conversation_id=conversation_id,
             received_at=received_at,
@@ -706,7 +708,7 @@ async def refresh_access_token(user_id: str, provider: str) -> dict:
             raise RuntimeError(f"/me failed: {me_resp.status_code} {me_resp.text}")
         me = me_resp.json()
         provider_account_id = me.get("id") or data.get("provider_account_id") or ""
-
+    print("Access Token Refreshed")
     # 5) Persist: SAVE THE ROTATED REFRESH TOKEN
     save_ms_tokens_for_user(
         app_user_id=user_id,
@@ -727,7 +729,7 @@ async def refresh_access_token(user_id: str, provider: str) -> dict:
 
 #Google Specific Functions
 def gmail_search_query(sender_email: str, received_after_utc: Optional[datetime]) -> str:
-    print("Gmail Search Query")
+
     q = [f"from:{sender_email}"]
     print(received_after_utc)
 
@@ -743,7 +745,6 @@ def gmail_search_query(sender_email: str, received_after_utc: Optional[datetime]
     return " ".join(q)
 
 async def gmail_client(user_id: str) -> httpx.AsyncClient:
-    print("Gmail Client")
     tokens = await refresh_access_token(user_id, 'google')
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     return httpx.AsyncClient(base_url=GMAIL_BASE, headers=headers, timeout=30)
@@ -897,7 +898,7 @@ async def fetch_messages_for_sender_google(user_id: str, sender_email: str, rece
             if not page_token:
                 return
             params["pageToken"] = page_token
-
+    print("Completed Fetch Messages for Sender Google")
 async def fetch_message_body_html_google(
         user_id: str,
         message_id: str,
