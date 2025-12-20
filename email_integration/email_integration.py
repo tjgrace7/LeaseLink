@@ -238,8 +238,8 @@ async def SyncMail(user_id, provider, new_contact: bool = False, contacts: list 
         return True
     except Exception as e:
         print(traceback.format_exc)
+        print("Sync Mail Error:", e)
         await supabase_sync(user_id, "error", provider)
-        print("Failed to Sync Mail", e)
 
 def sync_notification(user_id, contacts):
     print("Send Sync Notification")
@@ -606,7 +606,7 @@ async def integration_callback(request: Request, provider: str):
 
 
 
-async def refresh_access_token(user_id: str) -> dict:
+async def refresh_access_token(user_id: str, provider: str) -> dict:
     print("refresh access token")
     """
     Load user's tokens, refresh if expired (with skew), save rotated refresh_token,
@@ -618,6 +618,7 @@ async def refresh_access_token(user_id: str) -> dict:
         supabase.table("Access_Tokens")
         .select("*")
         .eq("user_auth_id", user_id)
+        .eq("provider", provider)  # adjust if multiple providers
         .single()
         .execute()
     )
@@ -743,7 +744,7 @@ def gmail_search_query(sender_email: str, received_after_utc: Optional[datetime]
 
 async def gmail_client(user_id: str) -> httpx.AsyncClient:
     print("Gmail Client")
-    tokens = await refresh_access_token(user_id)
+    tokens = await refresh_access_token(user_id, 'google')
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     return httpx.AsyncClient(base_url=GMAIL_BASE, headers=headers, timeout=30)
 
@@ -918,7 +919,7 @@ async def fetch_message_body_html_google(
 
 async def _graph_client_microsoft(user_id: str) -> httpx.AsyncClient:
     print("Graph Client Microsoft")
-    tokens = await refresh_access_token(user_id)
+    tokens = await refresh_access_token(user_id, 'microsoft')
     headers = {"Authorization": f"bearer {tokens['access_token']}"}
     return httpx.AsyncClient(base_url=Graph, headers=headers, timeout=30)
 async def fetch_messages_for_sender_microsoft(
