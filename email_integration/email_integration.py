@@ -182,9 +182,11 @@ async def fetchMessages(user_id, provider, contact, folder: Optional[str] = None
             merged = {**message, **full_msg}
             await handle_message_upload(contact, merged, content_type, content_html, message_id, provider, user_id)
     if provider == "google":
+        print("provider is google")
         async for message in fetch_messages_for_sender_google(user_id=user_id, sender_email=email, folder=folder, received_after_utc=previous_sync):
             graph_id = message.get('id')
             message_id = message.get("message_id")
+            print("Processing Message ID:", message_id)
             if not graph_id:
                 print("Missing Graph ID, skipping message")
                 continue
@@ -904,6 +906,7 @@ async def fetch_messages_for_sender_google(
                     break
 
                 data = r.json()
+                print(data)
                 ids = [m["id"] for m in data.get("messages", [])]
                 if not ids:
                     return
@@ -942,7 +945,7 @@ async def fetch_messages_for_sender_google(
                     key=lambda x: x.get("receivedDateTime", ""),
                     reverse=True,
                 )
-
+                print("Fetched Rows:", len(rows))
                 for item in rows:
                     if remaining <= 0:
                         return
@@ -951,16 +954,19 @@ async def fetch_messages_for_sender_google(
 
                 # --- Pagination ---
                 page_token = data.get("nextPageToken")
+                print("Page Token:", page_token)
                 if not page_token:
+                    print("No More Pages")
                     return
 
                 params["pageToken"] = page_token
                 params["maxResults"] = min(remaining, 100)
+                print("Completed Fetch Messages for Sender Google")
+
     except Exception as e:
         print("Error in fetch_messages_for_sender_google:", e)
         raise
-    print("Completed Fetch Messages for Sender Google")
-
+    
 async def fetch_message_body_html_google(
         user_id: str,
         message_id: str,

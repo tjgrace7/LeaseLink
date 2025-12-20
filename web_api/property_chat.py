@@ -79,11 +79,19 @@ def get_propertyTenants(property_id, company_id):
     print("Tenants:", tenants)
     return tenants
 
-def get_supabase_data(tenants, column_names):
+def get_supabase_data(tenants, column_names, ai_message):
     data = []
     for tenant in tenants:
         tenant_id = tenant['tenant_id']
-        response = supabase.table("lease_documents").select(column_names).eq("tenant_id", tenant_id).execute()
+        response = supabase.table("lease_documents").select(column_names, 'lease_commencement_date', 'lease_execution_date').eq("tenant_id", tenant_id).execute()
+        print("Supabase Response:", response)
+        if response.data:
+            for column in column_names.split(","):
+                value = get_recent_field(column.strip(), response.data)
+                if value is not None:
+                    data.append({column.strip(): value, "tenant_id": tenant_id})
+    print("Supabase Data:", data)
+    return data
         
 
 def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, emailCollection, top_k=5):
@@ -442,9 +450,11 @@ async def property_chat_request(collection_name, property_id, company_id, messag
         all_prompt_tokens += prompt_tokens
         all_completion_tokens += completion_tokens
 
-        await get_supabase_data(tenants, columns)
-
         ai_message, message_vector, prompt_tokens, completion_tokens = await rephrase_question(message, claude_model)
+        all_prompt_tokens += prompt_tokens
+        all_completion_tokens += completion_tokens
+
+        tenantdata, prompt_tokens, completion_tokens = await get_supabase_data(tenants, columns, ai_message, message_vector)
         all_prompt_tokens += prompt_tokens
         all_completion_tokens += completion_tokens
     except Exception as e:
