@@ -616,116 +616,125 @@ async def refresh_access_token(user_id: str, provider: str) -> dict:
     """
     # 1) Load current tokens row
     # Supabase-py v2 pattern:
-    row = (
-        supabase.table("Access_Tokens")
-        .select("*")
-        .eq("user_auth_id", user_id)
-        .eq("provider", provider)  # adjust if multiple providers
-        .single()
-        .execute()
-    )
-    if getattr(row, "error", None):
-        raise RuntimeError(f"Supabase select error: {row.error}")
-
-    data = row.data or {}
-    if not data:
-        raise RuntimeError("No token record found for user.")
-
-    # 2) Parse times in UTC
-    # Make sure your DB stores UTC; if it's a string like "2025-10-24T15:00:00+00:00"
-    expires_at_db = data["expires_at"]
-    if isinstance(expires_at_db, str):
-        # 2025-10-24T15:00:00+00:00 or without tz
-        dt = datetime.fromisoformat(expires_at_db.replace("Z", "+00:00"))
-    elif isinstance(expires_at_db, datetime):
-        dt = expires_at_db
-    else:
-        raise RuntimeError("Unexpected expires_at type from DB.")
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)  # assume UTC if naive
-
-    now_utc = datetime.now(timezone.utc)
-
-    # 3) If still valid (with skew), return decrypted access token
-    if now_utc + EXP_SKEW < dt:
-        access_token = decrypt_token(data["access_token"])
-        return {
-            "access_token": access_token,
-            "expires_at": dt.isoformat(),
-            "scope": data.get("scope"),
-            "provider_account_id": data.get("provider_account_id"),
-            "refreshed": False,
-        }
-
-    # 4) Otherwise, refresh using httpx (async, non-blocking)
-    refresh_token_plain = decrypt_token(data["refresh_token"])
-    token_url = ""
-    form = {}
-    URL = ""
-    provider = data["provider"]
-    if provider == "microsoft":
-        token_url = MICROSOFT_TOKEN_URL
-        URL = "https://graph.microsoft.com/v1.0/me"
-        form = {
-            "client_id": MICROSOFT_CLIENT_ID,
-            "grant_type": "refresh_token",
-            "refresh_token": refresh_token_plain,
-            # optional on refresh; if you include, it must be equal/subset of original:
-            "scope": MICROSOFT_DEFAULT_SCOPES,
-            "redirect_uri": MICROSOFT_REDIRECT_URI,
-        }
-        # Include secret for confidential (server) apps
-        if MICROSOFT_CLIENT_SECRET:
-            form["client_secret"] = MICROSOFT_CLIENT_SECRET
-
-    elif provider == "google":
-        token_url = GOOGLE_TOKEN_URL
-        URL = f"{GMAIL_BASE}/users/me/profile"
-        form = {
-            "client_id": GOOGLE_CLIENT_ID,
-            'client_secret': GOOGLE_CLIENT_SECRET,
-            'grant_type': "refresh_token",
-            'refresh_token': refresh_token_plain
-        }
-    async with httpx.AsyncClient(timeout=30) as client:
-        resp = await client.post(token_url, data=form)
-        if resp.status_code != 200:
-            # Typical errors: invalid_grant (revoked/expired RT), invalid_client (wrong secret)
-            raise RuntimeError(f"Refresh failed: {resp.status_code} {resp.text}")
-        payload = resp.json()
-
-        new_access_token = payload["access_token"]
-        new_refresh_token = payload.get("refresh_token", refresh_token_plain)  # rotate if provided
-        expires_in = int(payload.get("expires_in", 3600))
-        new_expires_at = now_utc + timedelta(seconds=expires_in)
-
-        # Optional: verify token & capture account id
-        me_resp = await client.get(
-            URL,
-            headers={"Authorization": f"Bearer {new_access_token}"},
+    try:
+        row = (
+            supabase.table("Access_Tokens")
+            .select("*")
+            .eq("user_auth_id", user_id)
+            .eq("provider", provider)  # adjust if multiple providers
+            .single()
+            .execute()
         )
-        if me_resp.status_code != 200:
-            raise RuntimeError(f"/me failed: {me_resp.status_code} {me_resp.text}")
-        me = me_resp.json()
-        provider_account_id = me.get("id") or data.get("provider_account_id") or ""
-    print("Access Token Refreshed")
-    # 5) Persist: SAVE THE ROTATED REFRESH TOKEN
-    save_ms_tokens_for_user(
-        app_user_id=user_id,
-        provider_account_id=provider_account_id,
-        access_token=new_access_token,           # let your save fn do encryption
-        refresh_token=new_refresh_token,         # let your save fn do encryption
-        expires_in=expires_in,                   # or change save fn to accept absolute expires_at
-        provider=provider,
-    )
+        if getattr(row, "error", None):
+            print("Supabase Select Error:", row.error)
+            raise RuntimeError(f"Supabase select error: {row.error}")
 
-    return {
-        "access_token": new_access_token,
-        "expires_at": new_expires_at.isoformat(),
-        "scope": payload.get("scope", data.get("scope")),
-        "provider_account_id": provider_account_id,
-        "refreshed": True,
-    }
+        data = row.data or {}
+        
+        if not data:
+            raise RuntimeError("No token record found for user.")
+        print("Token Data Retrieved")
+        # 2) Parse times in UTC
+        # Make sure your DB stores UTC; if it's a string like "2025-10-24T15:00:00+00:00"
+        expires_at_db = data["expires_at"]
+        if isinstance(expires_at_db, str):
+            # 2025-10-24T15:00:00+00:00 or without tz
+            dt = datetime.fromisoformat(expires_at_db.replace("Z", "+00:00"))
+        elif isinstance(expires_at_db, datetime):
+            dt = expires_at_db
+        else:
+            raise RuntimeError("Unexpected expires_at type from DB.")
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)  # assume UTC if naive
+
+        now_utc = datetime.now(timezone.utc)
+        print("Current Time UTC:", now_utc.isoformat())
+        # 3) If still valid (with skew), return decrypted access token
+        if now_utc + EXP_SKEW < dt:
+            access_token = decrypt_token(data["access_token"])
+            return {
+                "access_token": access_token,
+                "expires_at": dt.isoformat(),
+                "scope": data.get("scope"),
+                "provider_account_id": data.get("provider_account_id"),
+                "refreshed": False,
+            }
+
+        # 4) Otherwise, refresh using httpx (async, non-blocking)
+        refresh_token_plain = decrypt_token(data["refresh_token"])
+        token_url = ""
+        form = {}
+        URL = ""
+        provider = data["provider"]
+        print("Provider:", provider)
+        if provider == "microsoft":
+            token_url = MICROSOFT_TOKEN_URL
+            URL = "https://graph.microsoft.com/v1.0/me"
+            form = {
+                "client_id": MICROSOFT_CLIENT_ID,
+                "grant_type": "refresh_token",
+                "refresh_token": refresh_token_plain,
+                # optional on refresh; if you include, it must be equal/subset of original:
+                "scope": MICROSOFT_DEFAULT_SCOPES,
+                "redirect_uri": MICROSOFT_REDIRECT_URI,
+            }
+            # Include secret for confidential (server) apps
+            if MICROSOFT_CLIENT_SECRET:
+                form["client_secret"] = MICROSOFT_CLIENT_SECRET
+
+        elif provider == "google":
+            token_url = GOOGLE_TOKEN_URL
+            URL = f"{GMAIL_BASE}/users/me/profile"
+            form = {
+                "client_id": GOOGLE_CLIENT_ID,
+                'client_secret': GOOGLE_CLIENT_SECRET,
+                'grant_type': "refresh_token",
+                'refresh_token': refresh_token_plain
+            }
+            print("Google Refresh Form:")
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(token_url, data=form)
+            if resp.status_code != 200:
+                # Typical errors: invalid_grant (revoked/expired RT), invalid_client (wrong secret)
+                print("Refresh Token Error:", resp.text)
+                raise RuntimeError(f"Refresh failed: {resp.status_code} {resp.text}")
+            payload = resp.json()
+
+            new_access_token = payload["access_token"]
+            new_refresh_token = payload.get("refresh_token", refresh_token_plain)  # rotate if provided
+            expires_in = int(payload.get("expires_in", 3600))
+            new_expires_at = now_utc + timedelta(seconds=expires_in)
+
+            # Optional: verify token & capture account id
+            me_resp = await client.get(
+                URL,
+                headers={"Authorization": f"Bearer {new_access_token}"},
+            )
+            if me_resp.status_code != 200:
+                raise RuntimeError(f"/me failed: {me_resp.status_code} {me_resp.text}")
+            me = me_resp.json()
+            provider_account_id = me.get("id") or data.get("provider_account_id") or ""
+        print("Access Token Refreshed")
+        # 5) Persist: SAVE THE ROTATED REFRESH TOKEN
+        save_ms_tokens_for_user(
+            app_user_id=user_id,
+            provider_account_id=provider_account_id,
+            access_token=new_access_token,           # let your save fn do encryption
+            refresh_token=new_refresh_token,         # let your save fn do encryption
+            expires_in=expires_in,                   # or change save fn to accept absolute expires_at
+            provider=provider,
+        )
+
+        return {
+            "access_token": new_access_token,
+            "expires_at": new_expires_at.isoformat(),
+            "scope": payload.get("scope", data.get("scope")),
+            "provider_account_id": provider_account_id,
+            "refreshed": True,
+        }
+    except Exception as e:
+        print("Error in refresh_access_token:", e)
+        raise
 
 #Google Specific Functions
 def gmail_search_query(sender_email: str, received_after_utc: Optional[datetime]) -> str:
