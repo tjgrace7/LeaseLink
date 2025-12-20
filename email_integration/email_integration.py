@@ -185,6 +185,7 @@ async def fetchMessages(user_id, provider, contact, folder: Optional[str] = None
             graph_id = message.get('id')
             message_id = message.get("message_id")
             if not graph_id:
+                print("Missing Graph ID, skipping message")
                 continue
             if qdrant_email_exists(message_id, company_id):
                 print("Email already exists in Qdrant, skipping:", message_id)
@@ -652,6 +653,7 @@ async def refresh_access_token(user_id: str, provider: str) -> dict:
         # 3) If still valid (with skew), return decrypted access token
         if now_utc + EXP_SKEW < dt:
             access_token = decrypt_token(data["access_token"])
+            print("Access Token Still Valid")
             return {
                 "access_token": access_token,
                 "expires_at": dt.isoformat(),

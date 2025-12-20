@@ -31,8 +31,10 @@ def get_propertyTenants(property_id, company_id):
     print("Tenants:", tenants)
     return tenants
 
-def get_supabase_data(tenants, column_name):
-     data = []
+def get_supabase_data(tenants, column_names):
+    data = []
+    for tenant in tenants:
+
 def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, emailCollection, top_k=5):
     results = qdrant.search(
         collection_name=collection_name,
@@ -314,12 +316,7 @@ def get_supabase_column(message, claude_model):
 
   }
 ]
-Frame your answer as a jsonn list of column names only that would best help answer the question. Disregard any columns that would not help answer the question.
-[
-    Curly Bracket Here
-        Column Name
-    Close Curly Bracket Here
-]
+Frame your answer as a comma seperated list of column names that are most relevant to answer the user's question. 
 Do not create columns not listed. Do not respond with anything other than the json list of column names.
             """),
             messages=[
@@ -334,6 +331,7 @@ Do not create columns not listed. Do not respond with anything other than the js
     column_response = message_summary.content[0].text
     prompt_tokens = token_usage.input_tokens
     completion_tokens = token_usage.output_tokens
+    print("Columns Response:", column_response)
     return column_response, prompt_tokens, completion_tokens
 def rephrase_question(question: str, claude_model: str) -> str:
         message_summary = claude.messages.create(
@@ -384,13 +382,20 @@ Return a **single, semantically precise** version of the user's question that wi
 
 
 
-def property_chat_request(collection_name, property_id, company_id, message, oldData, claude_model, emailCollection):
+async def property_chat_request(collection_name, property_id, company_id, message, oldData, claude_model, emailCollection):
     try:
-
+        all_prompt_tokens = 0
+        all_completion_tokens = 0
         tenants = get_propertyTenants(property_id, company_id)
-        ai_message, message_vector, prompt_tokens, completion_tokens = rephrase_question(message, claude_model)
-        
+        columns, prompt_tokens, completion_tokens = await get_supabase_column(message, claude_model)
+        all_prompt_tokens += prompt_tokens
+        all_completion_tokens += completion_tokens
 
+        await get_supabase_data(tenants, columns)
+
+        ai_message, message_vector, prompt_tokens, completion_tokens = await rephrase_question(message, claude_model)
+        all_prompt_tokens += prompt_tokens
+        all_completion_tokens += completion_tokens
     except Exception as e:
         print("Error in property chat request:", e)
         return {"error": "Failed to process property chat request."}
