@@ -476,7 +476,7 @@ async def UploadMail    (
     token_count = len(encoding.encode(text)) or 0
     embedding_cost = token_count*0.00000013
     print("Tenant_id", tenant_id)
-
+    print("Message Text:", text)
     point = PointStruct(
         id=str(uuid4()),
         vector=vector,
@@ -913,6 +913,7 @@ async def fetch_message_body_html_google(
         msg = r.json()
         content_type, content = gmail_find_html_or_text(msg.get("payload", {}))
         env = gmail_normalize_list_item(msg)
+        print("Message content fetched", content)
         return content_type, content, env
 
 #Microsoft Specific Functions
