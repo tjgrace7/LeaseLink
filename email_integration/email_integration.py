@@ -101,7 +101,7 @@ async def previous_subabase_sync(user_id, provider):
 
 
     sync_res = supabase.table("Email_Sync_Logs").select("*").eq("user_id", internal_user_id).eq('provider', provider).execute()
-    if len(sync_res.data) >0:
+    if sync_res.data and len(sync_res.data) >0 and sync_res.data[0].get("sync_status") == 'complete':
         return sync_res.data[0]
     else: 
         return None
