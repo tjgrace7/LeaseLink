@@ -39,7 +39,7 @@ def get_recent_field(fieldname, data):
             return None
 
     value = None
-
+    file_path = None
     if len(data) > 1:
         # filter leases that have a date AND the field
         valid_leases = [
@@ -58,9 +58,10 @@ def get_recent_field(fieldname, data):
         )
 
         value = sorted_leases[0].get(fieldname)
-
+        file_path = sorted_leases[0].get("lease_file_path")
     else:
         value = data[0].get(fieldname)
+        file_path = data[0].get("lease_file_path")
 
     # replicate JS "{a,b,c}" → newline list
     if isinstance(value, str) and value.startswith("{") and value.endswith("}"):
@@ -69,7 +70,7 @@ def get_recent_field(fieldname, data):
             for item in value[1:-1].split(",")
         )
 
-    return value
+    return value, file_path
 
 def get_propertyTenants(property_id, company_id):
     response = supabase.table("Property_Tenant").select("*").eq("property_id", property_id).eq("company_id", company_id).execute()
@@ -79,22 +80,24 @@ def get_propertyTenants(property_id, company_id):
     print("Tenants:", tenants)
     return tenants
 
-def get_supabase_data(tenants, column_names, ai_message):
+def get_supabase_data(tenants, column_names, ai_message, collection_name):
     data = []
     for tenant in tenants:
         tenant_id = tenant['tenant_id']
-        response = supabase.table("lease_documents").select(column_names, 'lease_commencement_date', 'lease_execution_date').eq("tenant_id", tenant_id).execute()
+        response = supabase.table("lease_documents").select(column_names, 'lease_commencement_date', 'lease_execution_date', 'lease_file_path').eq("tenant_id", tenant_id).execute()
         print("Supabase Response:", response)
         if response.data:
             for column in column_names.split(","):
-                value = get_recent_field(column.strip(), response.data)
+                value, file_path = get_recent_field(column.strip(), response.data)
                 if value is not None:
-                    data.append({column.strip(): value, "tenant_id": tenant_id})
+                    data.append({column.strip(): value, "tenant_id": tenant_id, "lease_file_path": file_path})
+        else:
+            tenant_ai_response(tenant_id, tenant['property_management_id'], collection_name, ai_message)
     print("Supabase Data:", data)
     return data
         
 
-def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, emailCollection, top_k=5):
+def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, top_k=5):
     results = qdrant.search(
         collection_name=collection_name,
         query_vector=('dense-vector', message_vector),
@@ -112,23 +115,44 @@ def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, a
             ]
         ),
     )
-    emailresults = qdrant.search(
-                collection_name=emailCollection,
-                query_vector= message_vector,
-                limit=top_k,
-                with_payload=True,
-                with_vectors=False,
-                query_filter=Filter(
-                    must=[
-                        FieldCondition(key="tenant_id", match=MatchValue(value=tenant_id)),
-                        FieldCondition(key="company_id", match=MatchValue(value=company_id))
-                    ]
-                )
-            )
+    if not results:
+            raise ValueError("No results found for tenant_id/company_id.")
+
+    context = "\n\n".join([
+     f"source_doc = {r.payload.get('source_doc', 'unknown')}, pageNumber = {r.payload.get('pageNumber', 'N/A')})\n{r.payload['text']}"
+        for r in results if "text" in r.payload
+        ])
     now = datetime.now()
-    system_prompt = f"""You are a helpful assistant answering questions about lease documents."""
+    system_prompt = f"""You are a helpful assistant answering questions about lease documents.
+    The current date is {now.strftime("%B %d, %Y")}. Use the provided lease document excerpts to answer the user's question.
+    If the excerpts do not contain relevant information, respond with "I don't know based on the provided documents."
+    Be concise and accurate in your responses. You are the 2nd step in a multi-step process to answer the user's question. This process could be repeated many times based on the number of tenants at the property.
+    So only provide the bare minimum information needed to answer the user's question based on the provided excerpts.Your answer will be fed to another ai not the user directly.
+    Here's the message to answer: "{ai_message}"
+    Here are the relevant lease document excerpts: 
+    {context}
 
 
+    Answer the question clearly.
+
+At the end of your answer, if you used any specific context chunks, return them in the following JSON format. The `highlight_text` should be the exact text from the chunk you used in your answer. Use tenantid from context to answer
+
+Do NOT include any chunks that were not used in your answer.
+
+If two chunks share the same `source_doc` and `pageNumber`, and both were used in your answer, combine their `highlight_text` fields into one string, and return a single JSON object for that page! DO NOT RETURN TWO JSON STRINGS WITH THE SAME source_doc and pageNumber
+
+Use this format exactly:
+
+```json
+[
+  Curly Bracket
+    "source_doc": "leaselink/dairy_queen/",
+    "pageNumber": 12,
+    "highlight_text": "abc-123"
+  Curly bracket close
+]
+
+"""
 def get_supabase_column(message, claude_model):
     message_summary = claude.messages.create(
             model=claude_model,
@@ -454,7 +478,7 @@ async def property_chat_request(collection_name, property_id, company_id, messag
         all_prompt_tokens += prompt_tokens
         all_completion_tokens += completion_tokens
 
-        tenantdata, prompt_tokens, completion_tokens = await get_supabase_data(tenants, columns, ai_message, message_vector)
+        tenantdata, prompt_tokens, completion_tokens = await get_supabase_data(tenants, columns, ai_message, message_vector, collection_name)
         all_prompt_tokens += prompt_tokens
         all_completion_tokens += completion_tokens
     except Exception as e:
