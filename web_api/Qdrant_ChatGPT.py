@@ -108,7 +108,7 @@ def _extract_after_fence(response_text: str, fence_name: str):
     return None
 
  #Gets data from vector db that was just uploaded for ChatGPT
-def get_relevant_chunks(collection_Name, q_client, filtertype1, filterid1, company_id, message, openAI, claude, oldData, supabase_client, claude_model, emailCollection):
+def get_relevant_chunks(collection_Name, q_client, filtertype1, filterid1, company_id, message, openAI, claude, oldData, supabase_client, claude_model, emailCollection, unit_id = ""):
     print("get_relevant_chunks")
     now = datetime.now()
     prompt_tokens = 0
@@ -116,6 +116,7 @@ def get_relevant_chunks(collection_Name, q_client, filtertype1, filterid1, compa
     completion_tokens = 0 
     completion_cost = 0
     res = supabase_client.table('Property_Management_Companies').select("*").eq("company_id", company_id).limit(1).execute()
+    print("Company Info:", res)
     company = res.data[0]
     # Default return values in case of failure
     default_response = (
@@ -174,21 +175,37 @@ Return a **single, semantically precise** version of the user's question that wi
         print("Encode question for pricing")
         encoding = tiktoken.encoding_for_model("text-embedding-3-large")
         embedding_token_count = len(encoding.encode(input))
-
+        print(unit_id)
         print("Qdrant Search")
-        results = q_client.search(
-            collection_name=collection_Name,
-            query_vector=("dense-vector", message_vector),
-            limit=20,
-            with_payload=True,
-            with_vectors=False,
-            query_filter=Filter(
-                must=[
-                    FieldCondition(key=filtertype1, match=MatchValue(value=filterid1)),
-                    FieldCondition(key="managementcompany_id", match=MatchValue(value=company_id))
-                ]
+        if unit_id== None:
+            results = q_client.search(
+                collection_name=collection_Name,
+                query_vector=("dense-vector", message_vector),
+                limit=20,
+                with_payload=True,
+                with_vectors=False,
+                query_filter=Filter(
+                    must=[
+                        FieldCondition(key=filtertype1, match=MatchValue(value=filterid1)),
+                        FieldCondition(key="managementcompany_id", match=MatchValue(value=company_id))
+                    ]
+                )
             )
-        )
+        else:
+            results = q_client.search(
+                collection_name=collection_Name,
+                query_vector=("dense-vector", message_vector),
+                limit=20,
+                with_payload=True,
+                with_vectors=False,
+                query_filter=Filter(
+                    must=[
+                        FieldCondition(key=filtertype1, match=MatchValue(value=filterid1)),
+                        FieldCondition(key="managementcompany_id", match=MatchValue(value=company_id)),
+                        FieldCondition(key='unitid', match=MatchValue(value=unit_id))
+                    ]
+                )
+            )
         print(len(results))
         if not results:
             raise ValueError("No results found for tenant_id/company_id.")
