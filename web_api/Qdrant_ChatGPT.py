@@ -109,7 +109,7 @@ def _extract_after_fence(response_text: str, fence_name: str):
     return None
 
  #Gets data from vector db that was just uploaded for ChatGPT
-def tenant_chat(collection_Name, q_client,  filterid1, company_id, message, openAI, claude, oldData, supabase_client, claude_model, emailCollection, unit_id = ""):
+def get_relevant_chunks(collection_Name, q_client,  filterid1, company_id, message, openAI, claude, oldData, supabase_client, claude_model, emailCollection, unit_id = ""):
     print("get_relevant_chunks")
     now = datetime.now()
     prompt_tokens = 0
