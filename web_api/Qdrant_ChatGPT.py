@@ -71,6 +71,7 @@ def _extract_after_fence(response_text: str, fence_name: str):
     Find ```<fence_name>, then extract the first COMPLETE JSON value ({} or [])
     following it by brace balancing. Ignores any prose after.
     """
+    print("Extracting after fence:", fence_name)
     if not isinstance(response_text, str):
         response_text = str(response_text)
 
@@ -108,7 +109,7 @@ def _extract_after_fence(response_text: str, fence_name: str):
     return None
 
  #Gets data from vector db that was just uploaded for ChatGPT
-def get_relevant_chunks(collection_Name, q_client, filtertype1, filterid1, company_id, message, openAI, claude, oldData, supabase_client, claude_model, emailCollection, unit_id = ""):
+def tenant_chat(collection_Name, q_client,  filterid1, company_id, message, openAI, claude, oldData, supabase_client, claude_model, emailCollection, unit_id = ""):
     print("get_relevant_chunks")
     now = datetime.now()
     prompt_tokens = 0
@@ -180,13 +181,13 @@ Return a **single, semantically precise** version of the user's question that wi
         if unit_id== None:
             results = q_client.search(
                 collection_name=collection_Name,
-                query_vector=("dense-vector", message_vector),
+                query_vector=("dense_vector", message_vector),
                 limit=20,
                 with_payload=True,
                 with_vectors=False,
                 query_filter=Filter(
                     must=[
-                        FieldCondition(key=filtertype1, match=MatchValue(value=filterid1)),
+                        FieldCondition(key='tenantid', match=MatchValue(value=filterid1)),
                         FieldCondition(key="managementcompany_id", match=MatchValue(value=company_id))
                     ]
                 )
@@ -200,7 +201,7 @@ Return a **single, semantically precise** version of the user's question that wi
                 with_vectors=False,
                 query_filter=Filter(
                     must=[
-                        FieldCondition(key=filtertype1, match=MatchValue(value=filterid1)),
+                        FieldCondition(key='tenantid', match=MatchValue(value=filterid1)),
                         FieldCondition(key="managementcompany_id", match=MatchValue(value=company_id)),
                         FieldCondition(key='unitid', match=MatchValue(value=unit_id))
                     ]
@@ -346,9 +347,9 @@ Use this format exactly:
         )
         token_usage = chat_response.usage
         prompt_tokens += token_usage.input_tokens
-        prompt_cost = (prompt_tokens / 1000 * 0.01) + (embedding_token_count / 1000 * 0.00013)
+        prompt_cost = (prompt_tokens / 1000 * 0.003) + (embedding_token_count / 1000 * 0.00013)
         completion_tokens += token_usage.output_tokens
-        completion_cost = completion_tokens / 1000 * 0.03
+        completion_cost = completion_tokens / 1000 * 0.015
 
         print("total_cost", completion_cost + prompt_cost)
         chat_message = chat_response.content[0].text
