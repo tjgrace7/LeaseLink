@@ -700,7 +700,7 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
         oldmessages = Supabase_api.message_get_request(supabase_client, session_id, "entity_questions")
 
         final_message, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data, email_data = Qdrant_ChatGPT.get_relevant_chunks(
-            collectionName, qdrant_client, filtertype, entity_id, company_id, message,
+            collectionName, qdrant_client, entity_id, company_id, message,
             OpenAIclient, claude_client, oldmessages, supabase_client, claude_model, emailCollection, unit_id
         )
         print(email_data)
