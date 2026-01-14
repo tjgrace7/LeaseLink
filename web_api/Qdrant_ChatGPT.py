@@ -179,6 +179,8 @@ Return a **single, semantically precise** version of the user's question that wi
         print(unit_id)
         print("Qdrant Search")
         if unit_id== None:
+            print("Unit Id Empty")
+            print("Tenant Id:", filterid1)
             results = q_client.search(
                 collection_name=collection_Name,
                 query_vector=("dense_vector", message_vector),
@@ -196,7 +198,7 @@ Return a **single, semantically precise** version of the user's question that wi
             results = q_client.search(
                 collection_name=collection_Name,
                 query_vector=("dense-vector", message_vector),
-                limit=20,
+                limit=30,
                 with_payload=True,
                 with_vectors=False,
                 query_filter=Filter(
