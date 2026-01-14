@@ -182,7 +182,7 @@ Return a **single, semantically precise** version of the user's question that wi
             results = q_client.search(
                 collection_name=collection_Name,
                 query_vector=("dense_vector", message_vector),
-                limit=20,
+                limit=30,
                 with_payload=True,
                 with_vectors=False,
                 query_filter=Filter(
