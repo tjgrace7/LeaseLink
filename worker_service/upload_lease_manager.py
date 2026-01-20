@@ -1,20 +1,20 @@
 from dotenv import load_dotenv
-from . import claude_extractor
 import json
 import uuid
 from datetime import datetime
 import common.Supabase_api as Supabase_api
 import traceback
-from common.cleanup_utils import Clear_Uploads, CheckGroupComplete
+from common.cleanup_utils import Clear_Uploads, CheckGroupComplete, NotifyComplete
+import traceback
 
-from . import Textract
 
+from . import Textract, final_check
 
 def load_pdf(
     auth_id: str,
     propertyid: str,
     unit_id: str,
-    tenantid: str,
+    tenant_id: str,
     get_pdf: str,                 # storage path (e.g. "company/tenant/file.pdf")
     lease_id: str,
     bucket_name: str,
@@ -24,8 +24,7 @@ def load_pdf(
     qdrant_client,                # parent-only client (safe)
     supabase_client,              # parent-only client (safe)
     job_id: str,
-    job_status: dict,
-    claude_client,                # ok to use in parent for metadata extraction
+    job_status: dict,               # ok to use in parent for metadata extraction
     claude_model: str,
     group_id: str
 ):
@@ -45,58 +44,19 @@ def load_pdf(
     pdf_file = Supabase_api.download_file(supabase_client, bucket_name, get_pdf)
 
     try:
-        # 2) Claude extraction (metadata/fields)
-        extracted_lease_data, claude_total_cost, total_pages = claude_extractor.claude_extraction(
-            pdf_file, claude_client, supabase_client, claude_model, verbose=True
-        )
-        if extracted_lease_data is None:
-            uploadError("No Extraction Data", job_status, supabase_client, job_id, get_pdf, group_id)
-            return
-        # Normalize to dict
-        lease_data = (
-            json.loads(extracted_lease_data)
-            if isinstance(extracted_lease_data, str)
-            else extracted_lease_data
-        ) or {}
 
-        # Attach our additional fields
-        lease_data["upload_session_id"] = upload_session_id
-        lease_data["lease_file_path"] = get_pdf
-        lease_data["tenant_id"] = tenantid
-        lease_data["created_by"] = auth_id
-        lease_data["lease_id"] = lease_id
-        lease_data["page_count"] = total_pages
 
-        print(lease_data)
-        # Upsert into lease_documents
-        Supabase_api.supabase_post_request(supabase_client, [lease_data], "lease_documents")
-
-        # Status bookkeeping
-        job_status["status"] = "extracted"
-        (
-            supabase_client
-            .table("Upload_Job_Status")
-            .update({"job_info": job_status})
-            .eq("job_id", job_id)
-            .execute()                                           # ✅ ensure update runs
-        )
-        (
-            supabase_client
-            .table("tenant")
-            .update({"Available": True})
-            .eq("tenant_id", tenantid)
-            .execute()                                           # ✅ ensure update runs
-        )
+ 
 
         
         print("Starting PDF text extraction + embedding")
 
 
 
-        total_embedding_cost = Textract.runTextract(
+        total_embedding_cost, total_pages = Textract.runTextract(
              pdf=pdf_file,
              file_path=get_pdf,
-             tenantid=tenantid,
+             tenantid=tenant_id,
              propertymanagerid=auth_id,
              propertyid=propertyid,
              unit_id=unit_id,
@@ -106,9 +66,11 @@ def load_pdf(
             qdrant_client=qdrant_client,
             jobid=job_id,
             collectionName=collectionName,
-            group_id=group_id
+            group_id=group_id,
+            lease_id=lease_id
              )
 
+        textract_cost = total_pages * .015 + total_embedding_cost
         # Status bookkeeping
         job_status["status"] = "success"
         (
@@ -121,11 +83,12 @@ def load_pdf(
 
         # 4) Persist costs back to lease_documents (same row; using your helper)
         cost_upload = {
-            "cost_per_upload": (total_embedding_cost or 0.0) + (claude_total_cost or 0.0),
+            "cost_per_upload": (textract_cost),
             "lease_id": lease_id,
             "upload_session_id": upload_session_id,
         }
         Supabase_api.supabase_post_request(supabase_client, [cost_upload], "lease_documents")
+        
         print("Run Group")
         group = supabase_client.table('upload_groups').select('done_jobs').eq('id', group_id).single().execute()
         print(group)
@@ -136,7 +99,13 @@ def load_pdf(
         res = supabase_client.table('upload_groups').update({'done_jobs': done_jobs}).eq('id', group_id).execute()
         print(res)
         print("Check Complete Group")
-        CheckGroupComplete(group_id)
+        res = CheckGroupComplete(group_id)
+
+        is_done = res['is_done']
+        if is_done:
+            final_check.extract_tenant_data(tenant_id, unit_id, claude_model, collectionName)
+            NotifyComplete(group_id)
+
         end = datetime.now()
         duration = (end-start).total_seconds() 
         print("Duration:", duration)
@@ -145,9 +114,11 @@ def load_pdf(
         print("Upload Error", e)
         print(traceback.format_exc)
         uploadError(e, job_status, supabase_client, job_id, get_pdf, group_id)
-        
+
+
 
 def uploadError(e, job_status, supabase_client, job_id, get_pdf, group_id):
+        traceback.print_exc()
         print(f"GPT extraction or supabase insert failed: {e}")
         job_status["status"] = "error"
         # reflect error to job status table

@@ -14,7 +14,7 @@ from email_integration import PKCE
 from typing import Optional
 from queue import Queue
 import threading
-import uuid
+
 import jwt
 import logging
 import traceback
@@ -31,10 +31,12 @@ from fastapi.responses import PlainTextResponse
 import common.Supabase_api as Supabase_api
 from worker_service import upload_lease_manager
 from web_api import Qdrant_ChatGPT
+from web_api import property_chat
 from email_integration import email_integration
 import hmac
 import hashlib
 from fastapi import FastAPI, Request, Header, HTTPException, BackgroundTasks, Response
+import asyncio
 
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,6 +64,7 @@ job_status = {}  # { job_id: {status, error, result, ...} }
 
 EDGE_SECRET = os.getenv("PYTHON_EDGE_SECRET")
 collectionName = os.getenv("QDRANT_COLLECTION", "Lease_Link")
+
 emailCollection = 'email_chunks_v1'
 
 supabase_url = os.getenv("SUPABASE_URL")
@@ -227,7 +230,6 @@ def export_lease(job_id, lease_request, group_id, first_lease=False):
             supabase_client,     # Supabase client (parent)
             job_id,
             job_status[job_id],
-            claude_client,
             claude_model,
             group_id
         )
@@ -410,6 +412,7 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
         job_id = lease_request.get('job_id')
         group_id = lease_request.get('group_id')
         lease_data = lease_request.get('lease_data')
+        
 
         # Validate required fields
         if not auth_id or not job_id or not lease_data:
@@ -421,9 +424,11 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
 
         auth = verify_supabase_jwt(token)
         if not auth:
+            print("Auth failed")
             raise HTTPException(status_code=403, detail="Unauthorized")
 
         if auth["sub"] != auth_id:
+            print("Auth ID mismatch")
             raise HTTPException(status_code=403, detail="auth_id does not match token")
         
         # Check user's First_Value status
@@ -438,8 +443,8 @@ async def first_lease(request: Request, authorization: Optional[str] = Header(de
         # Now safely read First_Value
         first_value = user_row.get("First_Value")
 
-        if first_value is True:
-            raise HTTPException(status_code=403, detail='User has already received First Value Upload')
+        #if first_value is True:
+            #raise HTTPException(status_code=403, detail='User has already received First Value Upload')
         
         # Initialize job status
         job_status[job_id] = {
@@ -672,6 +677,7 @@ async def delete_email_integration(request: Request, authorization: Optional[str
     await email_integration.remove_integration_tokens(auth_id, provider, delete_qdrant)
     return {"status": "Integration removed"}
 
+
 def handle_entity_question(message_request, supabase_client, qdrant_client, OpenAIclient, collectionName):
     try:
         auth_id = message_request.get("auth_id")
@@ -680,29 +686,26 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
         company_id = message_request.get("company_id")
         message = message_request.get("message")
         session_id = message_request.get("session_id")
-        unit_id = message_request.get('unit_id')
-
+        
         if not company_id or not message or not session_id or not auth_id or not entity_type:
             print("Missing required fields")
             return
 
-        filtertype = {
-            "tenant": "tenantid",
-            "property": "propertyid",
-            "unit": "unitid",
-            "company": "managementcompany_id",
-        }.get(entity_type)
 
-        if not filtertype:
-            print(f"Invalid entity_type: {entity_type}")
-            return
 
         oldmessages = Supabase_api.message_get_request(supabase_client, session_id, "entity_questions")
+        final_message = ""
+        email_data = ""
+        prompt_cost = 0.0
+        prompt_tokens = 0.0
+        json_data = {}
+        
+        if entity_type == "tenant":
+            unit_id = message_request.get('unit_id')
 
         final_message, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data, email_data = Qdrant_ChatGPT.get_relevant_chunks(
             collectionName, qdrant_client, entity_id, company_id, message,
-            OpenAIclient, claude_client, oldmessages, supabase_client, claude_model, emailCollection, unit_id
-        )
+            OpenAIclient, claude_client, oldmessages, supabase_client, claude_model, emailCollection, unit_id)
         print(email_data)
         if final_message:
             supabase_client.table("entity_questions").insert(

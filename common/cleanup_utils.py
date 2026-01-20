@@ -87,8 +87,15 @@ def CheckGroupComplete(group_id: str):
     done  = group.get("done_jobs", 0) or 0
     err   = group.get("error_jobs", 0) or 0
     if total != done + err:
-        return None  # not complete yet
-
+        return {'is_done': False}  # not complete yet
+    else:
+        return {'is_done': True}
+def NotifyComplete(group_id: str):
+    group = sb_single(
+        supabase.table("upload_groups")
+        .select("id, company_id, tenantId, total_jobs, done_jobs, error_jobs, completed_at")
+        .eq("id", group_id)
+    )
     # Tenant (best effort)
     tenant_name = "(Unknown Tenant)"
     if group.get("tenantId"):
@@ -199,4 +206,5 @@ def CheckGroupComplete(group_id: str):
         "recipients": sendto,
         "documents": documents,
         "resend_result": str(resend_result),
+        'is_done': True
     }

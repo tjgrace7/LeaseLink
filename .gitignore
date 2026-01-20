@@ -31,3 +31,5 @@ poppler/
 /scripts/
 #ignore folder
 ignore
+#Extractions Folder
+Extractions

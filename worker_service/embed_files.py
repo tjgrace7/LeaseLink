@@ -15,6 +15,7 @@ def EmbedFiles(
     sourcedocname,
     chunkindex,
     company_id,
+    lease_id
 ):
     tenantid = tenantid or ""
 
@@ -42,7 +43,7 @@ def EmbedFiles(
         # Build Qdrant point — vector MUST be a flat list, not {"dense": ...}
         point = PointStruct(
             id=str(uuid4()),
-            vector={'dense-vector':vector},  # <-- flat list OK for single-vector collections
+            vector={"dense_vector": vector},  # <-- flat list OK for single-vector collections
             payload={
                 "tenantid": tenantid,
                 "propertymanagerid": propertymanagerid,
@@ -55,6 +56,7 @@ def EmbedFiles(
                 "session_id": upload_session_id,
                 "source_id": f"{upload_session_id}_{tenantid}_{sourcedocname}_{pagenumber}_{chunkindex}",
                 "managementcompany_id": company_id,
+                "lease_id": lease_id,
                 "highlight_id": str(uuid4()),
             },
         )
