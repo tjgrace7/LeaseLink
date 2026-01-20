@@ -17,7 +17,7 @@ import web_api.property_chat as property_chat
 import tiktoken
 import worker_service.Textract as txtract
 import uuid
-from . import extraction_prompts
+from worker_service import extraction_prompts
 import traceback
 
 load_dotenv()
@@ -257,7 +257,7 @@ Return STRICT JSON ONLY (no markdown, no extra text):
     completion_tokens = chat_response.usage.completion_tokens
     return response, prompt_tokens, completion_tokens
 
-def extract_tenant_data(tenant_id: str, unit_id: str, claude_model="claude-sonnet-4-20250514", collection_name = 'Lease_Link', time_update = False) -> float:
+def extract_tenant_data(tenant_id: str, unit_id: str, company_id: str, claude_model="claude-sonnet-4-20250514", collection_name = 'Lease_Link', time_update = False) -> float:
     """
     Run final check on lease data for a given tenant_id.
     Returns the cost of the final check operation.
@@ -325,7 +325,7 @@ def extract_tenant_data(tenant_id: str, unit_id: str, claude_model="claude-sonne
             future_top_k = 10
             past_top_k = 10
             present_top_k = 10
-            if column in ['unit_id', 'Is_Current', 'tenant_id', 'created_at', 'Tenant_Name', 'DBA', 'property_management_id', 'photo_file_path', 'Active', 'Available', 'Modified_By', 'archived', 'cost_per_upload', 'id']:
+            if column in ['unit_id', 'Is_Current', 'tenant_id', 'created_at', 'Tenant_Name', 'DBA', 'property_management_id', 'photo_file_path', 'Active', 'Available', 'Modified_By', 'archived', 'cost_per_upload', 'id', 'company_id']:
                 continue
             for lease_row in lease_files:
                 status = lease_row['status']
@@ -394,6 +394,7 @@ def extract_tenant_data(tenant_id: str, unit_id: str, claude_model="claude-sonne
             'cost_per_upload': tenant_cost,
             'unit_id': unit_id,
             'tenant_id': tenant_id,
+            'company_id': company_id,
             'Is_Current': True,
             'lease_commencement_date': all_columns['lease_commencement_date'],
             'lease_signed_date': all_columns['lease_signed_date'],
@@ -657,6 +658,7 @@ EXTRACTION INSTRUCTIONS
    Example with manual commencement date of 2024-03-15:
    - Document says: "Month 1-12: $2,000; Month 13-24: $2,200"
    - Calculate: "2024-03-15 to 2025-03-14: $2,000; 2025-03-15 to 2026-03-14: $2,200"
+   - Needs_Correction Should be true in this case!
 ═══════════════════════════════════════════════════════════════════
 OUTPUT FORMAT
 ═══════════════════════════════════════════════════════════════════
@@ -790,8 +792,6 @@ def point_to_dict(p):
         "payload": getattr(p, "payload", None),
         "vector": getattr(p, "vector", None),
     }
-
-
 
 
 

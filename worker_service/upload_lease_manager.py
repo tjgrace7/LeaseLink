@@ -103,7 +103,7 @@ def load_pdf(
 
         is_done = res['is_done']
         if is_done:
-            final_check.extract_tenant_data(tenant_id, unit_id, claude_model, collectionName)
+            final_check.extract_tenant_data(tenant_id, unit_id,company_id, claude_model, collectionName)
             NotifyComplete(group_id)
 
         end = datetime.now()
