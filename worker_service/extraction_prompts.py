@@ -172,6 +172,7 @@ Rules:
         - Do not use execution/effective dates unless the lease explicitly defines them as the commencement date. 
         - Do not infer from possession or rent commencement.
         - If commencement is conditional and no calendar date is stated, return null.
+        - If null return manual_review = true
         - If the Current Value was changed manually Do Not Adjust""",
         'required_document(s)': 'Original_Lease',
         'need_current_time': False
