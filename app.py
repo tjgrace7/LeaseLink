@@ -29,7 +29,7 @@ from qdrant_client import QdrantClient
 from fastapi.responses import PlainTextResponse
 
 import common.Supabase_api as Supabase_api
-from worker_service import upload_lease_manager
+from worker_service import upload_lease_manager, final_check
 from web_api import Qdrant_ChatGPT
 from web_api import property_chat
 from email_integration import email_integration
@@ -402,6 +402,42 @@ def cron_tick(x_cron_secret: str = Header(default="")):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post('/refresh_tenant')
+async def refresh_tenant(request: Request, authorization: Optional[str] = Header(default=None)):
+    try:
+        body = await request.body()
+        print("raw body: ", body)
+        update_request = await request.json()
+        auth_id = update_request.get("auth_id")
+        tenant_id = update_request.get('tenant_id')
+        unit_id = update_request.get('unit_id')
+        company_id = update_request.get('company_id')
+        
+
+        # Validate required fields
+        if not auth_id or not tenant_id or not unit_id or not company_id:
+            raise HTTPException(status_code=400, detail="Missing required fields: auth_id, tenant_id, unit_id or company_id")
+
+        token = authorization.replace("Bearer", "").strip() if authorization else None
+        if not token:
+            raise HTTPException(status_code=401, detail="Missing or invalid token")
+
+        auth = verify_supabase_jwt(token)
+        if not auth:
+            print("Auth failed")
+            raise HTTPException(status_code=403, detail="Unauthorized")
+
+        if auth["sub"] != auth_id:
+            print("Auth ID mismatch")
+            raise HTTPException(status_code=403, detail="auth_id does not match token")
+        await run_in_threadpool(final_check.extract_tenant_data, tenant_id, unit_id, company_id, time_update=True)
+        return JSONResponse(
+            status_code=200,
+            content={"message": "Tenant Reload Began"}
+        )
+    except Exception as e:
+        raise e
+        
 @app.post('/firstLease')
 async def first_lease(request: Request, authorization: Optional[str] = Header(default=None)):
     try:
