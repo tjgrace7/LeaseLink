@@ -744,9 +744,12 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
         if entity_type == "tenant":
             unit_id = message_request.get('unit_id')
 
-        final_message, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data, email_data = Qdrant_ChatGPT.get_relevant_chunks(
-            collectionName, qdrant_client, entity_id, company_id, message,
-            OpenAIclient, claude_client, oldmessages, supabase_client, claude_model, emailCollection, unit_id)
+            final_message, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data, email_data = Qdrant_ChatGPT.get_relevant_chunks(
+                collectionName, qdrant_client, entity_id, company_id, message,
+                OpenAIclient, claude_client, oldmessages, supabase_client, claude_model, emailCollection, unit_id)
+        elif entity_type =='property':
+
+            final_message, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data = property_chat.property_chat_request(collectionName, entity_id, message, oldmessages, claude_model)
         print(email_data)
         if final_message:
             supabase_client.table("entity_questions").insert(

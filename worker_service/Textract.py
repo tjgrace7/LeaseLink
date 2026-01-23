@@ -607,17 +607,6 @@ def runTextract(
             print("Splitting Pages")
         else:
             blocks = data
-            qdrant_client.delete(
-                collection_name=collectionName,
-                points_selector=Filter(
-                    must=[
-                        FieldCondition(
-                            key='lease_id',
-                            match=MatchValue(value=lease_id)
-                        )
-                    ]
-                )
-            )
         section_pages = build_pages_structured(blocks)
         total_pages = len(section_pages)
         
