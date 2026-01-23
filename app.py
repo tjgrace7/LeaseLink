@@ -403,7 +403,7 @@ def cron_tick(x_cron_secret: str = Header(default="")):
 
 
 @app.post('/refresh_tenant')
-async def refresh_tenant(request: Request, authorization: Optional[str] = Header(default=None)):
+async def refresh_tenant(request: Request, background_tasks: BackgroundTasks, authorization: Optional[str] = Header(default=None)):
     try:
         body = await request.body()
         print("raw body: ", body)
@@ -430,11 +430,16 @@ async def refresh_tenant(request: Request, authorization: Optional[str] = Header
         if auth["sub"] != auth_id:
             print("Auth ID mismatch")
             raise HTTPException(status_code=403, detail="auth_id does not match token")
-        await run_in_threadpool(final_check.extract_tenant_data, tenant_id, unit_id, company_id, time_update=True)
-        return JSONResponse(
-            status_code=200,
-            content={"message": "Tenant Reload Began"}
-        )
+        background_tasks.add_task(
+        final_check.extract_tenant_data,
+        tenant_id,
+        unit_id,
+        company_id,
+        time_update=True,  # time_update=True
+    )
+
+    # ✅ return immediately
+        return JSONResponse(status_code=202, content={"message": "Tenant refresh started"})
     except Exception as e:
         raise e
         

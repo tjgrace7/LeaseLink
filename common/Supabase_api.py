@@ -1,6 +1,7 @@
 from supabase import create_client
 import os
 from dotenv import load_dotenv
+load_dotenv()
 
 # ✅ Create Supabase client using service role key
 def supabase_client_setup():

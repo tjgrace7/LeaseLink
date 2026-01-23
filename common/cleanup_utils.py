@@ -8,10 +8,10 @@ import resend
 import html
 import os.path
 from typing import List, Dict, Any, Optional
+from common.Supabase_api import supabase_client_setup
 
-supabaseurl = os.getenv("SUPABASE_URL")
-service_key = os.getenv("SUPABASE_SERVICE_API_KEY")
-supabase = create_client(supabaseurl, service_key)
+
+supabase = supabase_client_setup()
 resend.api_key = os.getenv('RESEND_SECRET_KEY')
 
 def Clear_Uploads(job_id, file_path, job_status, group_id):
