@@ -33,7 +33,7 @@ Rules:
         'need_current_time': False,
         'minimum_required_confidence': .8},
     'base_rent_amount_current': {
-        'prompt': """Task: Extract the Base Rent amount (today's rent) payable for a single billing period (monthly, quarterly, semi-annual, or annual), reflecting the most recent amendment or escalation in effect.
+        'prompt': """Task: Extract the Base Rent amount (today's rent) payable for a single billing period reflecting the most recent amendment or escalation in effect.
           
           Rules:
 
@@ -41,7 +41,10 @@ Rules:
             STEP 2: Extract ONLY that amount as "value"
             STEP 3: Extract ALL future periods as "future_value" seperate future rents out so they are json parsable
             STEP 4: Extract Dates future rents take effect
-
+            STEP 5: Determine if the rent in the lease is monthly, quarterly, semi-annual, or annual.
+            STEP 6: If the rent is not monthly, calculate the proper monthly rent by dividing the rent amount by the number of months in the billing period. EX: Quarterly rent of $3000 = Monthly rent of $1000, Annual rent of $12000 = Monthly rent of $1000 etc.
+            STEP 7: Do not Just Return whatever value is in the lease! If the rent is not monthly, you must calculate the monthly rent amount.
+            STEP 8: If you are unsure of your calculation, require manual review by setting manual_review to true.
 
             ⚠️ DO NOT:
             - Choose the highest or most recent amount
@@ -224,14 +227,24 @@ Rules:
     },
     'rights_index': {
         'prompt': """Task: "Identify whether the lease expressly grants or expressly excludes any of the following tenant rights or option clauses. 
-        
+         Rights to Check:
+            - renewal_option
+            - expansion_rights
+            - termination_option
+            - contraction_rights
+            - rofr
+            - rofo
+            - purchase_option
+            - co_tenancy
+            - assignement_subletting_restrictions
          Rules:
           - For each right, include a key only if the lease explicitly states the right is granted or explicitly states it is excluded. 
           - Do not infer rights based on lease type, market norms, or silence.
           - If the lease is silent or unclear regarding a right, omit the key entirely.
           - This index reflects presence only and does not require summarizing terms, conditions, timing, or economics.
           - Set the value to true if the right is expressly granted.
-          - Set the value to false only if the lease expressly states the right does not apply or is waived.""",
+          - Set the value to false only if the lease expressly states the right does not apply or is waived.
+          - Use the exact right term in the list above. Do not alter in any way. Say true or false for each""",
           'required_document(s)': 'All',
           'need_current_time': False
     },

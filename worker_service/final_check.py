@@ -375,12 +375,15 @@ def extract_tenant_data(tenant_id: str, unit_id: str, company_id: str, claude_mo
                 
             prompt_tokens, completion_tokens, value = review_extraction_clases(column,  tenant, future_context, future_effective_date, current_context, past_context, original_context, claude_model, lease_commencement_date, time_update)
             if column == 'lease_commencement_date' and lease_commencement_date == None:
-                data = supabase.table('Lease_Extractions').select('lease_commencement_date').eq('id', extraction_id).single().execute()
-                print("Data", data)
-                date_json= data.data.get('lease_commencement_date', {})
-                if date_json not in [None, "null", ""]:
-                    lease_commencement_date = date_json.get('value', None)
+                try:
+                    data = supabase.table('Lease_Extractions').select('lease_commencement_date').eq('id', extraction_id).single().execute()
+                    print("Data", data)
+                    date_json= data.data.get('lease_commencement_date', {})
+                    if date_json not in [None, "null", ""]:
+                        lease_commencement_date = date_json.get('value', None)
+                except Exception as e:
                     print("Lease Commencement:", lease_commencement_date)
+                    print("Error fetching lease commencement date", e)
             total_prompt_tokens_claude += prompt_tokens
             total_completion_tokens_claude += completion_tokens
             all_columns[column] = value
@@ -793,6 +796,4 @@ def point_to_dict(p):
         "payload": getattr(p, "payload", None),
         "vector": getattr(p, "vector", None),
     }
-
-
 
