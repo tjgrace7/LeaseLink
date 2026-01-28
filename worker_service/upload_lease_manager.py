@@ -102,8 +102,9 @@ def load_pdf(
         res = CheckGroupComplete(group_id)
 
         is_done = res['is_done']
+        print("Is Done:", is_done)
         if is_done:
-            final_check.extract_tenant_data(tenant_id, unit_id,company_id, claude_model, collectionName)
+            final_check.extract_tenant_data(tenant_id, unit_id,company_id, claude_model, collectionName, False)
             NotifyComplete(group_id)
 
         end = datetime.now()

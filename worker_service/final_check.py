@@ -358,7 +358,7 @@ def extract_tenant_data(tenant_id: str, unit_id: str, company_id: str, claude_mo
                 for lease in future_leases:
                     lease_file_paths.append(lease['lease']['lease_file_path'])
                     if len(future_leases) ==1:
-                        future_effective_date = lease['lease']['effective_date']
+                        future_effective_date = lease['effective_date']
                 future_context = context_get(query_description(tenant_id, unit_id, desc, collection_name, future_top_k, lease_file_paths))
             if len(current_leases) > 0:
                 lease_file_paths = []
@@ -797,3 +797,5 @@ def point_to_dict(p):
         "vector": getattr(p, "vector", None),
     }
 
+
+extract_tenant_data('9c258c1b-01fa-426c-bfb1-6b06aa92c2d8', 'b31badfe-d42c-4633-8ef8-55cdb109a159', '4e23fa59-1a7e-42ed-8a53-b3a2ce78f366')
