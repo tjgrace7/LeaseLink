@@ -540,9 +540,25 @@ async def getContacts(user_id):
 async def integration_callback(request: Request, provider: str):
     print("Integration Callback Triggered")
     qp=request.query_params
-    if 'error' in qp:
-        #TODO Make sure this link goes somewhere the user knows code is missing
-        return RedirectResponse(f"{FRONTEND_URL}/settings/integrations?provider={provider}&error={qp.get('error_description','consent_failed')}")
+    error = qp.get("error")
+    error_desc= qp.get("error_description").lower()
+    if error:
+        print("OAuth Error:", error, error_desc)
+        if (
+        "aadsts65001" in error_desc
+        or "admin consent" in error_desc
+        or "administrator has not consented" in error_desc
+        ):
+            return RedirectResponse(
+                f"{FRONTEND_URL}/settings/integrations?"
+                f"provider={provider}&error=admin_approval_required"
+            )
+
+    # Other OAuth failure
+        return RedirectResponse(
+            f"{FRONTEND_URL}/settings/integrations?"
+            f"provider={provider}&error=consent_failed"
+        )
     
     code = qp.get('code')
     state = qp.get('state')
