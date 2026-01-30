@@ -5,7 +5,6 @@ from anthropic import Anthropic
 from qdrant_client import QdrantClient
 from qdrant_client.http.models import  Filter, FieldCondition, MatchValue, MatchAny
 import common.Supabase_api as Supabase_api
-from web_api import Qdrant_ChatGPT
 import json
 import re
 import ast
@@ -13,9 +12,7 @@ from dotenv import load_dotenv
 from datetime import datetime
 from typing import List, Dict, Optional, Union
 import unicodedata
-import web_api.property_chat as property_chat
 import tiktoken
-import worker_service.Textract as txtract
 import uuid
 from worker_service import extraction_prompts
 import traceback
@@ -118,18 +115,17 @@ def parse_model_payload(text: str) -> Optional[List[Dict]]:
     except Exception:
         return None
 
-def lease_check(tenant_id, unit_id,collection_name, leases):
+def lease_check(tenant_id, unit_id,collection_name, leases, default = 'Present'):
     total_prompt_tokens = 0
     total_completion_tokens = 0
     total_embedding_tokens = 0
-    lease_count = len(leases)
     sorted_leases = []
 
     for lease in leases:
         lease_id = lease['lease_id']
         lease_description = "lease term start date, commencement date, effective date, expiration date, end date, term period"
         lease_results, embedding_tokens = query_description(tenant_id, unit_id, lease_description, collection_name, 10, lease['lease_file_path'])
-        response, prompt_tokens, completion_tokens = active_lease(lease_results, lease_id)
+        response, prompt_tokens, completion_tokens = active_lease(lease_results, lease_id, default)
         total_prompt_tokens += prompt_tokens
         total_completion_tokens += completion_tokens
         total_embedding_tokens += embedding_tokens
@@ -157,6 +153,7 @@ def lease_check(tenant_id, unit_id,collection_name, leases):
                     'status': status,
                     'document_type': document_type
                 })
+
                 
     sorted_leases = sorted(
         sorted_leases,
@@ -166,7 +163,7 @@ def lease_check(tenant_id, unit_id,collection_name, leases):
 
 
     return sorted_leases, total_prompt_tokens, total_completion_tokens, total_embedding_tokens
-def active_lease(lease_results, lease_id):
+def active_lease(lease_results, lease_id, default):
     now = datetime.now()
     lease_context = "\n\n".join([
         f"source_doc = {r.payload.get('source_doc', 'unknown')}, pageNumber = {r.payload.get('pageNumber', 'N/A')})\n, text = {normalize_text(r.payload['text'])}"
@@ -203,11 +200,17 @@ DATE EXTRACTION RULES:
    - Extract term duration in months (convert years to months if needed)
    - Return null if cannot determine
 
-4. status (for THIS specific lease document):
-   - "Past" = expiration_date < TODAY (this lease has expired)
-   - "Present" = effective_date <= TODAY <= expiration_date (this lease is currently active based on its stated dates)
-   - "Future" = effective_date > TODAY (this lease hasn't started yet)
-   - Return "Present" as default if dates are unclear (we'll refine later by comparing all leases)
+4. status (MUST BE CONSISTENT WITH THE DATES YOU OUTPUT):
+   - Define TODAY_ISO = "{now.strftime('%Y-%m-%d')}" (yyyy-mm-dd)
+   - If expiration_date is not null AND expiration_date < TODAY_ISO → status MUST be "Past"
+   - Else if effective_date is not null AND effective_date > TODAY_ISO → status MUST be "Future"
+   - Else if effective_date is not null AND expiration_date is not null AND effective_date <= TODAY_ISO <= expiration_date → status MUST be "Present"
+   - Else → status MUST be "{default}"
+
+   VALIDATION (REQUIRED):
+   - After choosing status, verify it matches the above rules.
+   - If it does not match, you MUST change status to the correct value.
+   - NEVER output "Present" when expiration_date < TODAY_ISO.
 
 5. document_type (what kind of document is this):
    - "Original" = base lease agreement
@@ -231,7 +234,7 @@ Return STRICT JSON ONLY (no markdown, no extra text):
   "effective_date": "yyyy-mm-dd" or null,
   "expiration_date": "yyyy-mm-dd" or null,
   "term_length_months": integer or null,
-  "status": "Past" or "Present" or "Future",
+  "status": "Past" or "Present" or "Future or if unclear Default to {default}",
   "document_type": "Original" or "Amendment" or "Renewal" or "Unknown"
 }}
 """
