@@ -178,6 +178,7 @@ Return a **single, semantically precise** version of the user's question that wi
         embedding_token_count = len(encoding.encode(input))
         print(unit_id)
         print("Qdrant Search")
+        results = []
         if unit_id== None:
             print("Unit Id Empty")
             print("Tenant Id:", filterid1)
@@ -211,13 +212,16 @@ Return a **single, semantically precise** version of the user's question that wi
             )
         print(len(results))
         if not results:
-            raise ValueError("No results found for tenant_id/company_id.")
+            print("No results found for tenant_id/company_id.")
 
         print("Combining Search Results")
-        context = "\n\n".join([
-            f"source_doc = {r.payload.get('source_doc', 'unknown')}, pageNumber = {r.payload.get('pageNumber', 'N/A')})\n{r.payload['text']}"
-            for r in results if "text" in r.payload
-        ])
+        if results:
+            context = "\n\n".join([
+                f"source_doc = {r.payload.get('source_doc', 'unknown')}, pageNumber = {r.payload.get('pageNumber', 'N/A')})\n{r.payload['text']}"
+                for r in results if "text" in r.payload
+            ])
+        else: 
+            context = "null"
         emailscript = ""
         if company["Email_Function"]:
 
