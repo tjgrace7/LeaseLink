@@ -91,7 +91,7 @@ MS_CLIENT_ID = os.getenv("MS_CLIENT_ID")
 MS_REDIRECT_URI = os.getenv("MS_REDIRECT_URI")
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI")
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "http://localhost:5173")
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://www.leaselink.ai")
 
 
 job_queue = Queue()
