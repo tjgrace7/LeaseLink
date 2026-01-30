@@ -176,12 +176,14 @@ Return a **single, semantically precise** version of the user's question that wi
         print("Encode question for pricing")
         encoding = tiktoken.encoding_for_model("text-embedding-3-large")
         embedding_token_count = len(encoding.encode(input))
-        print(unit_id)
+        print("Unit Id", unit_id)
         print("Qdrant Search")
         results = []
+        print("Company ID", company_id)
         if unit_id== None:
             print("Unit Id Empty")
             print("Tenant Id:", filterid1)
+
             results = q_client.search(
                 collection_name=collection_Name,
                 query_vector=("dense_vector", message_vector),
@@ -196,6 +198,8 @@ Return a **single, semantically precise** version of the user's question that wi
                 )
             )
         else:
+            print("Tenant Id:", filterid1)
+
             results = q_client.search(
                 collection_name=collection_Name,
                 query_vector=("dense_vector", message_vector),

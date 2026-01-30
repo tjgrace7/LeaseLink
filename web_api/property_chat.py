@@ -18,6 +18,7 @@ import math
 from datetime import datetime
 from collections import defaultdict
 from typing import Any, Dict, List
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 load_dotenv()
 
@@ -29,6 +30,7 @@ claude = Anthropic(api_key=CLAUDE_API_KEY)
 qdrant = QdrantClient(url=os.getenv("QDRANT_URL"), api_key=os.getenv("QDRANT_API_KEY"))
 supabase = Supabase_api.supabase_client_setup()
 
+MAX_WORKERS = 5
 from datetime import datetime
 
 
@@ -46,6 +48,70 @@ def get_propertyTenants(property_id):
     print("Tenants:", tenants)
     return tenants
 
+def normalize_tenant(tenant):
+    if isinstance(tenant, tuple):
+        if len(tenant) >= 2 and isinstance(tenant[1], dict):
+            tenant = tenant[1]
+        elif len(tenant) >= 1 and isinstance(tenant[0], dict):
+            tenant = tenant[0]
+    if not isinstance(tenant, dict):
+        raise TypeError(f"Expected tenant dict, got {type(tenant)}: {tenant}")
+    return tenant
+
+def build_tenant_job_payload(tenant):
+    tenant_id = tenant.get("tenant_id")
+    if not tenant_id:
+        return None
+
+    tenant_name = tenant.get("Tenant_Name")
+
+    # Do Supabase reads in the main thread (safer), and compute sqft here.
+    unit_res = supabase.table("Units").select("*").eq("tenant_id", tenant_id).execute()
+    units = unit_res.data or []
+    tenant_square_footage = sum((u.get("square_footage") or 0) for u in units)
+
+    return {
+        "tenant_id": tenant_id,
+        "tenant_name": tenant_name,
+        "property_management_id": tenant.get("property_management_id"),
+        "tenant_square_footage": tenant_square_footage,
+    }
+
+def run_ai_for_tenant(job, collection_name, message_vector, ai_message, claude_model):
+    """
+    Runs in a worker thread. Keep this purely AI/network work if possible.
+    Return a tuple so the main thread can aggregate safely.
+    """
+    tenant_id = job["tenant_id"]
+    pm_id = job["property_management_id"]
+
+    if not pm_id:
+        # If this can be missing, skip cleanly
+        return None
+
+    result = tenant_ai_response(
+        tenant_id,
+        pm_id,
+        collection_name,
+        message_vector,
+        ai_message,
+        claude_model,
+    )
+    if not result:
+        return None
+
+    message_data, json_data, prompt_tokens, completion_tokens = result
+    print("json_data:", json.dumps(json_data, indent=2))
+    row = { 
+        "ai_response": message_data,
+        "tenant_id": tenant_id,
+        "lease_file_path": None,
+        "tenant_name": job["tenant_name"],
+        "source_docs": json_data,
+        "square_footage": job["tenant_square_footage"],
+    }
+
+    return row, (prompt_tokens or 0), (completion_tokens or 0)
 def get_supabase_data(tenants,  claude_model, ai_message, collection_name, message_vector, property_id):
     print("Get Supabase Data")
 
@@ -55,54 +121,52 @@ def get_supabase_data(tenants,  claude_model, ai_message, collection_name, messa
 
     total_prompt_tokens = 0
     total_completion_tokens = 0
+    total_square_footage = 0
+    jobs = []
 
     for tenant in tenants:
-        if isinstance(tenant, tuple):
-            if len(tenant) >= 2 and isinstance(tenant[1], dict):
-                tenant = tenant[1]
-            elif len(tenant) >=1 and isinstance(tenant[0], dict):
-                tenant = tenant[0]
-        if not isinstance(tenant, dict):
-            raise TypeError(f"Expected tenant dict, got {type(tenant)}: {tenant}")
-        
-        tenant_id = tenant.get('tenant_id')
-        tenant_name = tenant.get("Tenant_Name")
-        total_square_footage = 0
-        unit_res = supabase.table('Units').select('*').eq('tenant_id', tenant_id).execute()
-        units = unit_res.data
-        tenant_square_footage = 0
-        for unit in units:
-            tenant_square_footage += unit['square_footage']
-            total_square_footage += unit['square_footage']
+        tenant = normalize_tenant(tenant)
 
-            
+        job = build_tenant_job_payload(tenant)
+        total_square_footage += job["tenant_square_footage"]
+        jobs.append(job)
 
-        
 
-        if not tenant_id: 
-            print("Skipping tenant with missing tenant_id:", tenant)
-            continue
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+        future_to_tenant = {
+            executor.submit(
+                run_ai_for_tenant,
+                job,
+                collection_name,
+                message_vector,
+                ai_message,
+                claude_model,
+            ): job
+            for job in jobs
+            if job is not None
+        }
 
-        result = tenant_ai_response(tenant_id, tenant['property_management_id'],  collection_name, message_vector, ai_message, claude_model) 
-        if not result:
-            continue
-        message_data, json_data, prompt_tokens, completion_tokens = result
-        total_prompt_tokens += (prompt_tokens or 0)
-        total_completion_tokens += (completion_tokens or 0)
-        data.append({'ai_response': message_data, 'tenant_id': tenant_id, 'lease_file_path': None, "tenant_name": tenant_name, "source_docs": json_data, 'square_footage': tenant_square_footage})
-    print(data)
+        for future in as_completed(future_to_tenant):
+            result = future.result()
+            if result is None:
+                continue
+
+            row, prompt_tokens, completion_tokens = result
+            data.append(row)
+            total_prompt_tokens += prompt_tokens
+            total_completion_tokens += completion_tokens
     return data, total_prompt_tokens, total_completion_tokens, total_square_footage
         
 
 
-def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, claude_model, top_k=7):
+def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, claude_model, top_k=30):
     print("Tenant AI Response")
-    results = qdrant.search(
+    resp = qdrant.query_points(
         collection_name=collection_name,
-        query_vector=('dense_vector', message_vector),
+        query=message_vector,
+        using='dense_vector',
         limit=top_k,
         with_payload=True,
-        with_vectors=False,
         query_filter=Filter(
             must=[
                 FieldCondition(
@@ -112,8 +176,17 @@ def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, a
                     key="managementcompany_id",
                     match=MatchValue(value=company_id))
             ]
-        ),
-    )
+        ),)
+    points = resp.points
+    results = points
+    print("Count of Results Pre Cutoff:", len(results))
+    if points:
+        best = points[0].score
+        cutoff = best * .5
+        results = [p for p in points if p.score >= cutoff]
+    if(tenant_id == 'af8f03b8-0334-48ac-af46-651e1db7b6ee'):
+        print(results)
+    print("Count of Results Post Cutoff:", len(results))
     if not results:
         print("No Results found for Tenant_ID and Company_Id", tenant_id, company_id)
         return
@@ -123,25 +196,68 @@ def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, a
      f"source_doc = {r.payload.get('source_doc', 'unknown')}, pageNumber = {r.payload.get('pageNumber', 'N/A')})\n{r.payload['text']}"
         for r in results if "text" in r.payload
         ])
+    print("Context Combined", context)
     now = datetime.now()
     system_prompt = f"""You are a helpful assistant answering questions about lease documents.
-    The current date is {now.strftime("%B %d, %Y")}. Use the provided lease document excerpts to answer the user's question.
-    If the excerpts do not contain relevant information, respond with "I don't know based on the provided documents."
-    Be concise and accurate in your responses. You are the 2nd step in a multi-step process to answer the user's question. This process could be repeated many times based on the number of tenants at the property.
-    So Provide Consise AnswersYour answer will be fed to another ai not the user directly.
-    Here are the relevant lease document excerpts: 
-    {context}
 
+CONTEXT:
+- Current date: {now.strftime("%B %d, %Y")}
+- You are step 2 in a multi-step process that may repeat for each tenant at a property
+- Your answer will be fed to another AI system, NOT directly to the user
 
-    Answer the question clearly. If you don't know. Say - 'No Data Available'
+TASK:
+Use the provided lease document excerpts to answer the user's question concisely and accurately.
 
-At the end of your answer, if you used any specific context chunks, return them in the following JSON format. The `highlight_text` should be the exact text from the chunk you used in your answer. Use tenantid from context to answer
+RULES:
+1. If excerpts don't contain relevant information, respond with: "No Data Available"
+2. Be concise - avoid unnecessary elaboration
+3. Extract tenant_id from context when answering
+4. Prioritize more recent documents when information conflicts
 
-Do NOT include any chunks that were not used in your answer.
+CALCULATION & ANALYSIS CAPABILITIES:
+You may need to:
+- **Calculate rent amounts**: Apply escalation clauses, percentage rent, or prorated amounts based on dates
+- **Determine time periods**: Calculate lease terms, notice periods, or option exercise deadlines
+- **Interpret co-tenancy clauses**: Define triggers, remedy periods, and rent reduction formulas
+- **Apply conditional logic**: Determine if conditions are met (e.g., sales thresholds, occupancy requirements)
 
-If two chunks share the same `source_doc` and `pageNumber`, and both were used in your answer, combine their `highlight_text` fields into one string, and return a single JSON object for that page! DO NOT RETURN TWO JSON STRINGS WITH THE SAME source_doc and pageNumber
+When performing calculations:
+- Show your work clearly but concisely
+- State the formula or clause used
+- Include relevant dates and amounts
+- Note any assumptions made
 
-Use this format exactly:
+RELEVANT LEASE DOCUMENT EXCERPTS:
+{context}
+
+---
+
+ANSWER FORMAT EXAMPLES:
+
+**For rent calculations:**
+"Monthly base rent: $5,000. With 3% annual escalation from Jan 1, 2024, current rent (as of {now.strftime("%B %Y")}) is $5,150. (tenant_id: ABC-001)"
+
+**For co-tenancy clauses:**
+"Co-tenancy triggered if Anchor Tenant (defined as grocery store ≥40,000 SF) goes dark for >90 days. Remedy: Tenant may pay alternative rent of lesser of (a) $2/SF/month or (b) 8% of gross sales. (tenant_id: ABC-001)"
+
+**For date-based questions:**
+"Lease expires June 30, 2026. Tenant has two 5-year renewal options, exercisable with 180 days notice. Next option deadline: December 31, 2025. (tenant_id: ABC-001)"
+
+**For conditional clauses:**
+"Percentage rent triggers at $500,000 annual sales threshold. Current lease year: Jan 1 - Dec 31, 2026. If threshold met, tenant pays 6% of gross sales exceeding $500,000. (tenant_id: ABC-001)"
+
+---
+
+CITATION REQUIREMENTS:
+At the end of your answer, return ONLY the context chunks you actually used in JSON format.
+
+IMPORTANT:
+- Include ONLY chunks that directly supported your answer or calculations
+- If multiple chunks from the same document page were used, COMBINE them into a single JSON object
+- The `highlight_text` should contain the exact text from the chunk(s) used
+- DO NOT return duplicate entries with the same `source_doc` and `pageNumber`
+
+Required JSON format:
 
 ```json
 [
@@ -165,7 +281,7 @@ Use this format exactly:
             ]}
         ],
         temperature=0.0,
-        max_tokens=400
+        max_tokens=800
     )
     token_usage = chat_response.usage
     prompt_tokens = token_usage.input_tokens
@@ -173,7 +289,7 @@ Use this format exactly:
     chat_message = chat_response.content[0].text
     response_message = re.sub(r"```(?:json|emailjson)\s*.*?```", "", chat_message, flags=re.DOTALL|re.IGNORECASE).strip()
 
-
+    
 
 
     json_data = Qdrant_ChatGPT._extract_after_fence(chat_message, "json")
@@ -204,29 +320,32 @@ def rephrase_question(question: str, claude_model: str) -> str:
         message_summary = claude.messages.create(
             model=claude_model,
             system=(f"""
-You are preparing a search query for a vector database (Qdrant) to help retrieve the most relevant lease documents for answering a property management question.
+You are preparing a search query for a vector database (Qdrant) containing lease documents.
 
-Your goal is to rewrite or summarize the user's question in a way that improves semantic search relevance.
+Your task: Rewrite the user's question to maximize semantic search relevance.
 
-Important considerations:
+DOCUMENT CONTEXT:
+- Documents sharing a tenant_id belong to the same lease
+- Types: main_lease, amendment, renewal, addendum
+- Newer documents override older ones when they conflict
+- Current date: {now}
 
-- Documents with the same tenant_id belong to the same lease context and may include amendments, renewals, or overrides.
-- These documents can conflict. In such cases, **more recent documents should take precedence**. The current date is: {now}
-- Document types include: main_lease, amendment, renewal, addendum, etc.
-- Amendments or renewals may override clauses in the original lease — always prioritize newer documents for accuracy.
-- Only use what's needed from the question to guide the search (avoid restating unrelated fluff).
+QUERY OPTIMIZATION GUIDELINES:
 
-If the user asks about square footage, land size, or area, generate a query that includes terms like:
-- land size
-- square footage
-- site area
-- parcel size
-- property area
+For property size questions:
+→ Include: square footage, acreage, land area, site dimensions, parcel size
 
-Land size is often expressed as square feet or acres. The answer may come from county property reports or appraisals.
+For financial questions:
+→ Include: rent amounts, payment terms, commencement dates, dollar values, financial obligations
 
-Return a **single, semantically precise** version of the user's question that will help match the most relevant document chunks in the vector database.
+For date-sensitive questions:
+→ Include: effective dates, expiration dates, renewal dates, term length
 
+RULES:
+1. Return ONE semantically precise query
+2. Remove conversational fluff
+3. Preserve key details (tenant names, addresses, specific dates/amounts if mentioned)
+4. Don't add information not in the original question
             """),
             messages=[
                 {"role": "user", "content": [{
@@ -254,6 +373,7 @@ def final_property_chat(rephrased_message, tenant_data, oldmessages, claude_mode
     print("Final Property Chat")
     now = datetime.now().strftime("%B %d, %Y")
     total_prompt_tokens = 0
+    print("Tenant Data:", json.dumps(tenant_data, indent=2))
     total_completion_tokens = 0
     system_prompt = f"""You are a helpful assistant answering questions about ai commercial leases for property management companies. Because of the large amount of data you have to work with we have already filtered it down to relevant information.
     columns that end with psf mean per square foot.
@@ -274,12 +394,11 @@ Many Time Based Questions will reference documents that say term between Septemb
 If it is a Day in July 2025. That falls within that period. If the month and Year are outside that date and time. It does not fall within that period.
 ---
 If the provided tenant data says something like ai_message: "I don't have any context for this tenant" Do not ask for more information about that tenant. It has already been queried and found nothing.
-If you require more information about a specific tenant to answer the question answer exactly this:""" + """
+""" + """
 ``` json
 [
 { 
     {
-    "more_info" : true,
     "tenant_id": "the tenant uuid that you need more information about"
     "vector_query": "a concise vector search query that will help find more relavant information about this tenant",
     },
@@ -290,8 +409,8 @@ If you have enough information to answer the question, provide a concise and acc
 At the end of your answer, if you used any specific tenant data chunks, return them in (Anything sorted by tenant_id that you used in your answer. Source_doc and lease_file_path are the same thing if no page number included use 0):
 ``` json
 [
-    {more_info": False },
 {
+    "tenant_name": "The name of the tenant",
     "source_doc": "leaselink/dairy_queen/",
     "pageNumber": 12,
     "highlight_text": "abc-123"
@@ -323,25 +442,10 @@ At the end of your answer, if you used any specific tenant data chunks, return t
 
     json_data = Qdrant_ChatGPT._extract_after_fence(chat_message, "json")
     print("JSON Data Extracted:", json_data)
-    next_message = False
     query_results = []
     if json_data:
         merged = {}
         for d in json_data:
-            more_info = d.get("more_info", False)
-            if more_info:
-                key = f"{d.get('tenant_id'), d.get('vector_query')}"
-                if key not in merged:
-                    next_message = True
-                    final_query_result, embedding_token_count = final_query(d.get('vector_query'), d.get('chunks', 5), tenant_id=d.get('tenant_id'), collection_name=collection_name)
-                    final_embedding_token_count += embedding_token_count  
-                    print("Final Query Result for Tenant:", d.get('tenant_id'), final_query_result)
-                    query_results.append({
-                        "tenant_id": d.get('tenant_id'),
-                        "vector_query": d.get('vector_query'),
-                        "results": final_query_result})
-                    continue
-            else:
                 key = (d.get('source_doc'), d.get('pageNumber'))
                 if key not in merged:
                     if d.get('source_doc') is None:
@@ -355,6 +459,7 @@ At the end of your answer, if you used any specific tenant data chunks, return t
                     key = (d.get('source_doc'), d.get('pageNumber'))
                     
                     merged[key] = {
+                        'tenant_name': d.get('tenant_name'),
                         "source_doc": d.get("source_doc"),
                         "pageNumber": d.get('pageNumber'),
                         "highlight_text": d.get('highlight_text', ""),
@@ -367,81 +472,8 @@ At the end of your answer, if you used any specific tenant data chunks, return t
                         merged[key]['highlight_text'] = (merged[key]['highlight_text'] + " | " + ht).strip(" |")
         json_data = list(merged.values())
 
-    if next_message:
-        print("Getting Next Message with more info")
-        now = datetime.now().strftime("%B %d, %Y")
-        system_prompt_2 = f"""You are a helpful assistant answering questions about ai commercial leases for property management companies. Because of the large amount of data you have to work with we have already filtered it down to relevant information.
-        Here is the relevant data from tenants {tenant_data}. It is sorted by Tenant_id and within each tenant it is sorted by the most recent lease information. We have also retrieved more relevant information based on your last request.
-         If they asked about total square footage of the property use this number: {total_square_footage}. If they didn't ask about it. It will be zero.
-        Here is the new relevant data we found for you:{query_results}.
-        Here are previous messages related to this tenant:
-Each message includes a role:
-- "user" means it was written by the property manager
-- "assistant" means it was your previous response{oldmessages}If a user asks a time-based question (e.g., about rent, terms, insurance), use the following as the current date:
-**{now}**
-
-        Many Time Based Questions will reference documents that say term between September 2021 - August 2025
-        If it is a Day in July 2025. That falls within that period. If the month and Year are outside that date and time. It does not fall within that period.
-        ---
-        Answer the question concisely and accurately based on the tenant data provided.
-        At the end of your answer, if you used any specific tenant data chunks, return them in (Anything sorted by tenant_id that you used in your answer. Source_doc and lease_file_path are the same thing if no page number included use 0)::""" + """
-        ``` json
-        [
-        {
-            "source_doc": "leaselink/dairy_queen/",
-            "pageNumber": 12,
-            "highlight_text": "abc-123"  }]```"""
-        chat_response = claude.messages.create(
-            model=claude_model,
-            system=(system_prompt_2),
-            messages=[
-                {"role": "user", 'content': [
-                    {
-                        'type': 'text',
-                        'text': rephrased_message
-                    }
-                ]}
-            ],
-            temperature=0.0,
-            max_tokens=8000)
-        chat_message = chat_response.content[0].text
-        tokens = chat_response.usage
-        total_prompt_tokens += tokens.input_tokens
-        total_completion_tokens += tokens.output_tokens
-        
-
-
-
-
-        json_data = Qdrant_ChatGPT._extract_after_fence(chat_message, "json")
-
-        
-        if json_data:
-            merged = {}
-            for d in json_data:
-                signed_url = Supabase_api.get_signed_url(supabase, "lease-docs", d.get('source_doc'))
-                viewer_url = ""
-                if d.get('pageNumber') is None:
-                    viewer_url = f"{signed_url}&highlight_text={d.get('highlight_text')}"
-                else:
-                    viewer_url = f"{signed_url}#page={d.get('pageNumber')}&highlight_text={d.get('highlight_text')}"
-                key = (d.get('source_doc'), d.get('pageNumber'))
-                
-                if key not in merged:
-                    merged[key] = {
-                        "source_doc": d.get("source_doc"),
-                        "pageNumber": d.get('pageNumber'),
-                        "highlight_text": d.get('highlight_text', ""),
-                        "viewer_url": viewer_url
-                    }
-
-                else:
-                    ht = d.get("highlight_text", "")
-                    if ht and ht not in merged[key]['highlight_text']:
-                        merged[key]['highlight_text'] = (merged[key]['highlight_text'] + " | " + ht).strip(" |")
-                json_data = list(merged.values())
-    print("Final JSON Data:", json.dumps(json_data, indent=2))
     response_message = re.sub(r"```(?:json)\s*.*?```", "", chat_message, flags=re.DOTALL|re.IGNORECASE).strip()
+
     return response_message, json_data, total_prompt_tokens, total_completion_tokens,final_embedding_token_count or 0.0
 
 
@@ -478,42 +510,6 @@ def final_query(query, chunks, tenant_id, collection_name):
         return []
     return response, embedding_token_count
 
-def combine_by_tenant(records):
-    grouped = defaultdict(list)
-    final_group = []
-    for rec in records:
-        tenant_id = rec.get('tenant_id')
-        if not tenant_id:
-            continue
-        grouped[tenant_id].append(rec)
-    
-
-    final_group = compress_grouped_tenants(grouped)
-    return final_group
-    
-def compress_grouped_tenants(grouped: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Dict[str, Any]]:
-    out: Dict[str, Dict[str, Any]] = {}
-
-    for tenant_id, items in grouped.items():
-        tenant_name = None
-        for it in items:
-            tn = it.get("tenant_name")
-            if isinstance(tn, str) and tn.strip():
-                tenant_name = tn
-                break
-        
-        compressed_items: List[Dict[str, Any]] = []
-
-        for it in items:
-            new_it = {k:v for k, v in it.items() if k not in ('tenant_id', 'tenant_name')}
-            compressed_items.append(new_it)
-        
-        out[tenant_id] = {
-            "tenant_id": tenant_id,
-            "tenant_name": tenant_name,
-            "items": compressed_items
-        }
-    return out
         
 
 def property_chat_request(collection_name, property_id,message, oldData, claude_model):
@@ -536,18 +532,16 @@ def property_chat_request(collection_name, property_id,message, oldData, claude_
         tenantdata, prompt_tokens, completion_tokens, total_square_footage = get_supabase_data(tenants,claude_model, ai_message,  collection_name, message_vector, property_id)
         all_prompt_tokens += prompt_tokens
         all_completion_tokens += completion_tokens
-
-        prettytenantdata = combine_by_tenant(tenantdata)
         
-        final_response, json_data, prompt_tokens, completion_tokens, embedding_token_count_2 = final_property_chat(message, prettytenantdata, oldData, claude_model, collection_name, total_square_footage)
+        final_response, json_data, prompt_tokens, completion_tokens, embedding_token_count_2 = final_property_chat(message, tenantdata, oldData, claude_model, collection_name, total_square_footage)
         all_prompt_tokens += prompt_tokens
         all_completion_tokens += completion_tokens
         all_embedding_token_count += embedding_token_count_2
         prompt_cost = (all_prompt_tokens / 1000 * 0.003) + (all_embedding_token_count / 1000 * 0.00013)
         completion_cost = all_completion_tokens / 1000 * 0.015
-        print("Prompt Cost:", prompt_cost, "Completion Cost:", completion_cost)
+        
         print("Final Response", final_response)
-
+        print("Total Cost: $", prompt_cost+completion_cost, "Prompt Cost:", prompt_cost, "Completion Cost:", completion_cost)
         return final_response, all_prompt_tokens, prompt_cost, all_completion_tokens, completion_cost, json_data
     except Exception as e:
         print("Error in property chat request:", e)
