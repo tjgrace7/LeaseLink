@@ -114,7 +114,22 @@ def parse_model_payload(text: str) -> Optional[List[Dict]]:
         return normalize_return(ast.literal_eval(candidate))
     except Exception:
         return None
+def compute_status(today_iso: str, effective_date: str | None, expiration_date: str | None, default_status: str = "Present") -> str:
+    # today_iso must be "YYYY-MM-DD"
+    if expiration_date:
+        # ISO date strings compare correctly lexicographically
+        if expiration_date < today_iso:
+            return "Past"
 
+    if effective_date:
+        if effective_date > today_iso:
+            return "Future"
+
+    if effective_date and expiration_date:
+        if effective_date <= today_iso <= expiration_date:
+            return "Present"
+
+    return default_status
 def lease_check(tenant_id, unit_id,collection_name, leases, default = 'Present'):
     total_prompt_tokens = 0
     total_completion_tokens = 0
@@ -145,7 +160,9 @@ def lease_check(tenant_id, unit_id,collection_name, leases, default = 'Present')
                         effective_dt = datetime(1900,1,1)
                 except (ValueError, TypeError):
                     effective_dt = datetime(1900,1,1)
-                
+                computed = compute_status(datetime.now().strftime('%Y-%m-%d'), effective, item.get('expiration_date'), default)
+                if computed != status:
+                    status = computed
                 sorted_leases.append({ 
                     'lease': lease,
                     'effective_date': effective,

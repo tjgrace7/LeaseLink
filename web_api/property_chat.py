@@ -73,7 +73,7 @@ def build_tenant_job_payload(tenant):
         "tenant_square_footage": tenant_square_footage,
     }
 
-def run_ai_for_tenant(job, collection_name, message_vector, ai_message, claude_model, active):
+def run_ai_for_tenant(job, collection_name, message_vector, ai_message, claude_model):
     """
     Runs in a worker thread. Keep this purely AI/network work if possible.
     Return a tuple so the main thread can aggregate safely.
@@ -82,28 +82,9 @@ def run_ai_for_tenant(job, collection_name, message_vector, ai_message, claude_m
     pm_id = job["property_management_id"]
     lease_ids = []
     total_completion_tokens = 0
-    total_embedding_tokens = 0
+
     total_prompt_tokens =0
-    if active:
-            print("tenant Id", tenant_id)
-            unit_resp = supabase.table('Tenant_Unit').select('*').eq('tenant_id', tenant_id).eq('Is_Current', True).execute()
-            units = unit_resp.data or []
-            print("Units:", units)
-            for unit in units:
-                leases_resp = supabase.table('lease_documents').select('*').eq('tenant_id', tenant_id).eq('unit_id', unit['unit_id']).execute()
-                leases = leases_resp.data or []
-                lease_filter, prompt_tokens, completion_tokens, embedding_tokens = lease_check(tenant_id, unit['unit_id'], "Lease_Link", leases, default="Past")
-                total_prompt_tokens += prompt_tokens
-                total_completion_tokens += completion_tokens
-                total_embedding_tokens += embedding_tokens
-                for l in lease_filter:
-                    today_iso = datetime.now().strftime("%Y-%m-%d")
-                    computed = compute_status(today_iso, l.get('effective_date'), l.get('expiration_date'), default_status="Past")
-                    if l['status'] != computed:
-                        print("Updating status for lease", l['lease']['lease_id'], "from", l['status'], "to", computed)
-                        l['status'] = computed
-                    if l['status'] == "Present":
-                        lease_ids.append(l['lease']['lease_id'])
+
     if not pm_id:
         # If this can be missing, skip cleanly
         return None
@@ -116,7 +97,6 @@ def run_ai_for_tenant(job, collection_name, message_vector, ai_message, claude_m
         ai_message,
         claude_model,
         lease_ids, 
-        active
     )
     if not result:
         return None
@@ -135,7 +115,7 @@ def run_ai_for_tenant(job, collection_name, message_vector, ai_message, claude_m
     }
 
     return row, (total_prompt_tokens or 0), (total_completion_tokens or 0)
-def get_supabase_data(tenants,  claude_model, ai_message, collection_name, message_vector, active):
+def get_supabase_data(tenants,  claude_model, ai_message, collection_name, message_vector):
     print("Get Supabase Data")
 
 
@@ -167,7 +147,6 @@ def get_supabase_data(tenants,  claude_model, ai_message, collection_name, messa
                 message_vector,
                 ai_message,
                 claude_model,
-                active
             ): job
             for job in jobs
             if job is not None
@@ -184,24 +163,7 @@ def get_supabase_data(tenants,  claude_model, ai_message, collection_name, messa
             total_completion_tokens += completion_tokens
     return data, total_prompt_tokens, total_completion_tokens, total_square_footage, total_embedding_tokens
 
-def compute_status(today_iso: str, effective_date: str | None, expiration_date: str | None, default_status: str = "Present") -> str:
-    # today_iso must be "YYYY-MM-DD"
-    if expiration_date:
-        # ISO date strings compare correctly lexicographically
-        if expiration_date < today_iso:
-            return "Past"
-
-    if effective_date:
-        if effective_date > today_iso:
-            return "Future"
-
-    if effective_date and expiration_date:
-        if effective_date <= today_iso <= expiration_date:
-            return "Present"
-
-    return default_status
-        
-def tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_id, top_k=20):
+def tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_id, top_k=70):
     if(lease_ids != []):
         print("Filtering by Lease Ids:", lease_ids)
         resp = qdrant.query_points(
@@ -243,9 +205,10 @@ def tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_
     points = resp.points
     results = points
     print("Count of Results Pre Cutoff:", len(results))
+    print("Scores of Results Pre Cutoff:", [p.score for p in points])
     if points:
         best = points[0].score
-        cutoff = best * .8
+        cutoff = best * .6
         results = [p for p in points if p.score >= cutoff]
 
     print("Count of Results Post Cutoff:", len(results))
@@ -260,7 +223,7 @@ def tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_
         ])
     return context
 
-def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, claude_model, lease_ids, active):
+def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, claude_model, lease_ids):
     context = tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_id)
     now = datetime.now()
     system_prompt = f"""You are a helpful assistant answering questions about lease documents.
@@ -321,15 +284,12 @@ IMPORTANT:
 - If multiple chunks from the same document page were used, COMBINE them into a single JSON object
 - The `highlight_text` should contain the exact text from the chunk(s) used
 - DO NOT return duplicate entries with the same `source_doc` and `pageNumber`
-- If no relevant information was found, return a single JSON object with `"no_data_returned": true`
-- If Data is expired or not relevant to the question return "no_data_returned": true
 
 Required JSON format:
 
 ```json
 [
   Curly Bracket
-    "no_data_returned": true/false,
     "source_doc": "leaselink/dairy_queen/",
     "pageNumber": 12,
     "highlight_text": "abc-123"
@@ -362,15 +322,10 @@ Required JSON format:
 
     json_data = Qdrant_ChatGPT._extract_after_fence(chat_message, "json")
 
-    no_data = False
     if json_data:
         merged = {}
         for d in json_data:
-            no_data = d.get('no_data_returned', False)
-            if no_data and active:
-                print("Rerun Tenant AI Response for Active Lease")
-                tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, claude_model, [], False)
-                continue
+
 
             key = (d.get('source_doc'), d.get('pageNumber'))
             if key not in merged:
@@ -421,13 +376,6 @@ RULES:
 2. Remove conversational fluff
 3. Preserve key details (tenant names, addresses, specific dates/amounts if mentioned)
 4. Don't add information not in the original question
-5. Determine if question needs active Lease. (Lease with a term still in effect as of today)
-```json
-[
-  Curly Bracket
-    "requires_active_lease": true/false
-  Curly bracket close
-]
             """),
             messages=[
                 {"role": "user", "content": [{
@@ -457,15 +405,9 @@ RULES:
         print("Embedding Token Count:", embedding_token_count)
 
 
-
-        json_data = Qdrant_ChatGPT._extract_after_fence(ai_message, "json")
-
-        active = False
-        if json_data:
-            active = json_data.get('requires_active_lease', False)
                 
 
-        return ai_message, message_vector, prompt_tokens, completion_tokens, embedding_token_count, active
+        return ai_message, message_vector, prompt_tokens, completion_tokens, embedding_token_count
 
 def final_property_chat(rephrased_message, tenant_data, oldmessages, claude_model, collection_name, total_square_footage):
     print("Final Property Chat")
@@ -526,7 +468,7 @@ At the end of your answer, if you used any specific tenant data chunks, return t
             ]}
         ],
         temperature=0.0,
-        max_tokens=4000
+        max_tokens=8000
     )
     chat_message = chat_response.content[0].text
     tokens = chat_response.usage
@@ -619,13 +561,13 @@ def property_chat_request(collection_name, property_id,message, oldData, claude_
         tenants = get_propertyTenants(property_id)
 
 
-        ai_message, message_vector, prompt_tokens, completion_tokens, embedding_token_count, active = rephrase_question(message, claude_model)
+        ai_message, message_vector, prompt_tokens, completion_tokens, embedding_token_count = rephrase_question(message, claude_model)
         all_prompt_tokens += prompt_tokens
         all_completion_tokens += completion_tokens
         all_embedding_token_count += embedding_token_count
 
 
-        tenantdata, prompt_tokens, completion_tokens, total_square_footage, embedding_tokens = get_supabase_data(tenants,claude_model, ai_message,  collection_name, message_vector, active)
+        tenantdata, prompt_tokens, completion_tokens, total_square_footage, embedding_tokens = get_supabase_data(tenants,claude_model, ai_message,  collection_name, message_vector)
         all_prompt_tokens += prompt_tokens
         all_completion_tokens += completion_tokens
         all_embedding_token_count += embedding_tokens
