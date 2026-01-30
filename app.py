@@ -619,7 +619,24 @@ async def gmail_callback(request: Request):
    return await email_integration.integration_callback( request, "google")
 
 
+@app.get('/api/outlook/adminconsent/callback')
+async def ms_admin_consent_callback(request: Request):
+    qp = request.query_params
+     # approval case
+    admin_consent = (qp.get("admin_consent") or "").lower()
+    tenant = qp.get("tenant") or ""
+    state = qp.get("state") or ""
 
+    if admin_consent == "true":
+        # store tenant approved if you want (tenant is the GUID)
+        # save_tenant_admin_consent(tenant_id=tenant, ...)
+        return RedirectResponse(
+            f"{FRONTEND_URL}/settings/integrations?provider=microsoft&admin_approved=1&tenant={tenant}"
+        )
+
+    return RedirectResponse(
+        f"{FRONTEND_URL}/settings/integrations?provider=microsoft&error=admin_consent_unknown"
+    )
 @app.get('/api/outlook/oauth/callback')
 async def outlook_callback(request: Request):
    return await email_integration.integration_callback(request, "microsoft")  
