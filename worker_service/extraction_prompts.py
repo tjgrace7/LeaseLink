@@ -332,6 +332,16 @@ Rules:
         - If the lease does not expressly state a permitted use, leave this field null.""",
         'required_document(s)': 'All',
         'need_current_time': False
+    },
+    'CPI_LEASE': {
+
+        'prompt': """Task: Determine if the lease contains a Consumer Price Index (CPI) rent escalation clause. 
+        Rules:
+        - Look for explicit references to CPI, Consumer Price Index, or similar inflation indices as a basis for rent adjustments. 
+        - Do not infer CPI clauses from general escalation language or market norms. 
+        - If a CPI clause is clearly stated, return true; otherwise, return false.""",
+        'required_document(s)': 'All',
+        'need_current_time': False
     }
 
 }   

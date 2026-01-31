@@ -404,6 +404,9 @@ def extract_tenant_data(tenant_id: str, unit_id: str, company_id: str, claude_mo
                 except Exception as e:
                     print("Lease Commencement:", lease_commencement_date)
                     print("Error fetching lease commencement date", e)
+            if column == 'CPI_LEASE':
+                
+                print("CPI LEASE")
             total_prompt_tokens_claude += prompt_tokens
             total_completion_tokens_claude += completion_tokens
             all_columns[column] = value
@@ -448,7 +451,8 @@ def extract_tenant_data(tenant_id: str, unit_id: str, company_id: str, claude_mo
             'landlord_maintenance_responsibilities': all_columns['landlord_maintenance_responsibilities'],
             'hvac_responsibilities': all_columns['hvac_responsibilities'],
             'utility_responsibilities': all_columns['utility_responsibilities'],
-            'permitted_use': all_columns['permitted_use']
+            'permitted_use': all_columns['permitted_use'],
+            'CPI_LEASE': all_columns['CPI_LEASE']
             },
             on_conflict='id').execute()
         print(f"Final Cost - ${tenant_cost} (Prompt: ${prompt_cost + GPT_prompt_cost}, Completion: ${completion_cost + GPT_completion_cost}, Embedding: ${embedding_cost})")

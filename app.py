@@ -764,46 +764,82 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
             final_message, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data, email_data = Qdrant_ChatGPT.get_relevant_chunks(
                 collectionName, qdrant_client, entity_id, company_id, message,
                 OpenAIclient, claude_client, oldmessages, supabase_client, claude_model, emailCollection, unit_id)
+            if final_message:
+                supabase_client.table("entity_questions").insert(
+                    [
+                        {
+                            "entity_id": entity_id,
+                            "company_id": company_id,
+                            "message": message,
+                            "role": "user",
+                            "session_id": session_id,
+                            "auth_id": auth_id,
+                            "message_cost": prompt_cost,
+                            "prompt_tokens": prompt_tokens,
+                            "completion_tokens": 0,
+                            "entity": entity_type,
+                        }]).execute()
+                time.sleep(2)
+                supabase_client.table("entity_questions").insert(
+                        {
+                            "entity_id": entity_id,
+                            "company_id": company_id,
+                            "message": final_message,
+                            "role": "assistant",
+                            "session_id": session_id,
+                            "auth_id": auth_id,
+                            "message_cost": completion_cost,
+                            "prompt_tokens": 0,
+                            "completion_tokens": completion_tokens,
+                            "entity": entity_type,
+                            "sources": json_data,
+                            "email_sources": email_data
+                        },
+                    
+                ).execute()
+            else:
+                print("LLM returned None.")
         elif entity_type =='property':
-
-            final_message, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data = property_chat.property_chat_request(collectionName, entity_id, message, oldmessages, claude_model)
+    
+            tenant_data, prompt_tokens, prompt_cost, completion_tokens, completion_cost = property_chat.property_chat_request(collectionName, entity_id, message, oldmessages, claude_model)
+            if tenant_data:
+                supabase_client.table("entity_questions").insert(
+                    [
+                        {
+                            "entity_id": entity_id,
+                            "company_id": company_id,
+                            "message": message,
+                            "role": "user",
+                            "session_id": session_id,
+                            "auth_id": auth_id,
+                            "message_cost": prompt_cost,
+                            "prompt_tokens": prompt_tokens,
+                            "completion_tokens": 0,
+                            "entity": entity_type,
+                        }]).execute()
+                time.sleep(2)
+                for tenant in tenant_data:
+                    print("Tenant")
+                    supabase_client.table('entity_questions').insert(
+                        [
+                            {
+                                "entity_id": entity_id,
+                                "company_id": company_id,
+                                "message": tenant['ai_response'],
+                                "role": 'assistant',
+                                "session_id": session_id,
+                                'auth_id': auth_id,
+                                'message_cost': completion_cost/len(tenant_data),
+                                'prompt_tokens': 0,
+                                'completion_tokens': completion_tokens/len(tenant_data),
+                                'entity': entity_type,
+                                'sources': tenant['source_docs']
+                            }
+                        ]
+                    ).execute()
         print(email_data)
-        if final_message:
-            supabase_client.table("entity_questions").insert(
-                [
-                    {
-                        "entity_id": entity_id,
-                        "company_id": company_id,
-                        "message": message,
-                        "role": "user",
-                        "session_id": session_id,
-                        "auth_id": auth_id,
-                        "message_cost": prompt_cost,
-                        "prompt_tokens": prompt_tokens,
-                        "completion_tokens": 0,
-                        "entity": entity_type,
-                    }]).execute()
-            time.sleep(2)
-            supabase_client.table("entity_questions").insert(
-                    {
-                        "entity_id": entity_id,
-                        "company_id": company_id,
-                        "message": final_message,
-                        "role": "assistant",
-                        "session_id": session_id,
-                        "auth_id": auth_id,
-                        "message_cost": completion_cost,
-                        "prompt_tokens": 0,
-                        "completion_tokens": completion_tokens,
-                        "entity": entity_type,
-                        "sources": json_data,
-                        "email_sources": email_data
-                    },
-                
-            ).execute()
-            print("Message successfully processed.")
-        else:
-            print("LLM returned None.")
+        
+
     except Exception as e:
         print("Error in threaded message handler:", e)
 

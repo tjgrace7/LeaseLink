@@ -104,7 +104,6 @@ def run_ai_for_tenant(job, collection_name, message_vector, ai_message, claude_m
     message_data, json_data, prompt_tokens, completion_tokens = result
     total_prompt_tokens += prompt_tokens
     total_completion_tokens += completion_tokens
-    print("json_data:", json.dumps(json_data, indent=2))
     row = { 
         "ai_response": message_data,
         "tenant_id": tenant_id,
@@ -113,6 +112,7 @@ def run_ai_for_tenant(job, collection_name, message_vector, ai_message, claude_m
         "source_docs": json_data,
         "square_footage": job["tenant_square_footage"],
     }
+    print("Row", row)
 
     return row, (total_prompt_tokens or 0), (total_completion_tokens or 0)
 def get_supabase_data(tenants,  claude_model, ai_message, collection_name, message_vector):
@@ -124,7 +124,6 @@ def get_supabase_data(tenants,  claude_model, ai_message, collection_name, messa
 
     total_prompt_tokens = 0
     total_completion_tokens = 0
-    total_embedding_tokens = 0
     total_square_footage = 0
     jobs = []
 
@@ -161,7 +160,7 @@ def get_supabase_data(tenants,  claude_model, ai_message, collection_name, messa
             data.append(row)
             total_prompt_tokens += prompt_tokens
             total_completion_tokens += completion_tokens
-    return data, total_prompt_tokens, total_completion_tokens, total_square_footage, total_embedding_tokens
+    return data, total_prompt_tokens, total_completion_tokens
 
 def tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_id, top_k=70):
     if(lease_ids != []):
@@ -230,8 +229,9 @@ def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, a
 
 CONTEXT:
 - Current date: {now.strftime("%B %d, %Y")}
-- You are step 2 in a multi-step process that may repeat for each tenant at a property
-- Your answer will be fed to another AI system, NOT directly to the user
+- Your goal is to provide the most accurate answer possible for the tenant. This system is answering questions for each tenant seperately. Use only the provided context for the specific tenant.
+
+Provide each Tenants Name at the top of the response
 
 TASK:
 Use the provided lease document excerpts to answer the user's question concisely and accurately.
@@ -290,6 +290,7 @@ Required JSON format:
 ```json
 [
   Curly Bracket
+  "tenant_name": "The name of the tenant",
     "source_doc": "leaselink/dairy_queen/",
     "pageNumber": 12,
     "highlight_text": "abc-123"
@@ -309,7 +310,7 @@ Required JSON format:
             ]}
         ],
         temperature=0.0,
-        max_tokens=800
+        max_tokens=4000
     )
     token_usage = chat_response.usage
     prompt_tokens = token_usage.input_tokens
@@ -328,13 +329,20 @@ Required JSON format:
 
 
             key = (d.get('source_doc'), d.get('pageNumber'))
+            signed_url = Supabase_api.get_signed_url(supabase, "lease-docs", d.get('source_doc'))
+            viewer_url = ""
+            if d.get('pageNumber') is None:
+                viewer_url = f"{signed_url}&highlight_text={d.get('highlight_text')}"
+            else:
+                viewer_url = f"{signed_url}#page={d.get('pageNumber')}&highlight_text={d.get('highlight_text')}"
             if key not in merged:
                 merged[key] = {
+                    'tenant_name': d.get('tenant_name'),
                     "source_doc": d.get("source_doc"),
                     "pageNumber": d.get('pageNumber'),
                     "highlight_text": d.get('highlight_text', ""),
-                    
-                }
+                    "viewer_url": viewer_url
+                }   
 
             else:
                 ht = d.get("highlight_text", "")
@@ -513,40 +521,6 @@ At the end of your answer, if you used any specific tenant data chunks, return t
 
     return response_message, json_data, total_prompt_tokens, total_completion_tokens,final_embedding_token_count or 0.0
 
-
-def final_query(query, chunks, tenant_id, collection_name): 
-    print("Final Query for Property:", tenant_id)
-
-    message_vector = OpenAIclient.embeddings.create(
-            input=query,
-            model="text-embedding-3-large"
-        ).data[0].embedding
-
-    encoding = tiktoken.encoding_for_model("text-embedding-3-large")
-    embedding_token_count = len(encoding.encode(query))
-
-    response = qdrant.query_points(
-        collection_name=collection_name,
-        query=message_vector,
-        using='dense_vector',
-        limit=chunks,
-        with_payload=True,
-        query_filter=Filter(
-            must=[
-                FieldCondition(
-                    key="tenantid",
-                    match=MatchValue(value=tenant_id)),
-                
-                
-            ]
-        ),
-    )
-
-    if not response:
-        print("No Results found for Final Query for Tenant_ID", tenant_id)
-        return []
-    return response, embedding_token_count
-
         
 
 def property_chat_request(collection_name, property_id,message, oldData, claude_model):
@@ -567,21 +541,19 @@ def property_chat_request(collection_name, property_id,message, oldData, claude_
         all_embedding_token_count += embedding_token_count
 
 
-        tenantdata, prompt_tokens, completion_tokens, total_square_footage, embedding_tokens = get_supabase_data(tenants,claude_model, ai_message,  collection_name, message_vector)
+        tenantdata, prompt_tokens, completion_tokens= get_supabase_data(tenants,claude_model, ai_message,  collection_name, message_vector)
         all_prompt_tokens += prompt_tokens
         all_completion_tokens += completion_tokens
-        all_embedding_token_count += embedding_tokens
 
-        final_response, json_data, prompt_tokens, completion_tokens, embedding_token_count_2 = final_property_chat(message, tenantdata, oldData, claude_model, collection_name, total_square_footage)
+        """final_response, json_data, prompt_tokens, completion_tokens, embedding_token_count_2 = final_property_chat(message, tenantdata, oldData, claude_model, collection_name, total_square_footage)
         all_prompt_tokens += prompt_tokens
         all_completion_tokens += completion_tokens
-        all_embedding_token_count += embedding_token_count_2
+        all_embedding_token_count += embedding_token_count_2"""
         prompt_cost = (all_prompt_tokens / 1000 * 0.003) + (all_embedding_token_count / 1000 * 0.00013)
         completion_cost = all_completion_tokens / 1000 * 0.015
         
-        print("Final Response", final_response)
         print("Total Cost: $", prompt_cost+completion_cost, "Prompt Cost:", prompt_cost, "Completion Cost:", completion_cost)
-        return final_response, all_prompt_tokens, prompt_cost, all_completion_tokens, completion_cost, json_data
+        return tenantdata, all_prompt_tokens, prompt_cost, all_completion_tokens, completion_cost
     except Exception as e:
         print("Error in property chat request:", e)
         prompt_cost = (all_prompt_tokens / 1000 * 0.01) + (all_embedding_token_count / 1000 * 0.00013)
