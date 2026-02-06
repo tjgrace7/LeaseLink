@@ -833,7 +833,8 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
                                 'prompt_tokens': 0,
                                 'completion_tokens': completion_tokens/len(tenant_data),
                                 'entity': entity_type,
-                                'sources': tenant['source_docs']
+                                'sources': tenant['source_docs'],
+                                'longAnswer': tenant['long_answer']
                             }
                         ]
                     ).execute()

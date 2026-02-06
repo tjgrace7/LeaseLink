@@ -286,7 +286,8 @@ Rules:
         - If parking is common area with no tenant-specific rights, summarize that briefly.
         - If parking is not addressed, leave null.""",
         'required_document(s)': 'All',
-        'need_current_time': False
+        'need_current_time': False,
+        'minimum_required_confidence': .7
     },
     'tenant_maintenance_responsibilities': {
         'prompt': """Task: Summarize the Tenant’s maintenance, repair, and replacement obligations, including any expressly retained responsibilities. Include any stated limitations or conditions.

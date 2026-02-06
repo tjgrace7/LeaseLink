@@ -163,6 +163,7 @@ def lease_check(tenant_id, unit_id,collection_name, leases, default = 'Present')
                 computed = compute_status(datetime.now().strftime('%Y-%m-%d'), effective, item.get('expiration_date'), default)
                 if computed != status:
                     status = computed
+                    print("New Status", status)
                 sorted_leases.append({ 
                     'lease': lease,
                     'effective_date': effective,
@@ -405,7 +406,7 @@ def extract_tenant_data(tenant_id: str, unit_id: str, company_id: str, claude_mo
                     print("Lease Commencement:", lease_commencement_date)
                     print("Error fetching lease commencement date", e)
             if column == 'CPI_LEASE':
-                
+
                 print("CPI LEASE")
             total_prompt_tokens_claude += prompt_tokens
             total_completion_tokens_claude += completion_tokens

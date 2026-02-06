@@ -15,6 +15,7 @@ from anthropic import Anthropic
 import os
 from datetime import datetime
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import traceback
 
 load_dotenv()
 
@@ -41,7 +42,7 @@ def get_propertyTenants(property_id):
     tenants_resp = supabase.table('tenant').select('*').in_('tenant_id', tenant_ids).execute()
 
     tenants = tenants_resp.data or []
-    print("Tenants:", tenants)
+
     return tenants
 
 def normalize_tenant(tenant):
@@ -101,7 +102,7 @@ def run_ai_for_tenant(job, collection_name, message_vector, ai_message, claude_m
     if not result:
         return None
 
-    message_data, json_data, prompt_tokens, completion_tokens = result
+    message_data, long_answer, json_data, prompt_tokens, completion_tokens = result
     total_prompt_tokens += prompt_tokens
     total_completion_tokens += completion_tokens
     row = { 
@@ -110,9 +111,10 @@ def run_ai_for_tenant(job, collection_name, message_vector, ai_message, claude_m
         "lease_file_path": None,
         "tenant_name": job["tenant_name"],
         "source_docs": json_data,
+        'long_answer': long_answer,
         "square_footage": job["tenant_square_footage"],
     }
-    print("Row", row)
+
 
     return row, (total_prompt_tokens or 0), (total_completion_tokens or 0)
 def get_supabase_data(tenants,  claude_model, ai_message, collection_name, message_vector):
@@ -162,9 +164,8 @@ def get_supabase_data(tenants,  claude_model, ai_message, collection_name, messa
             total_completion_tokens += completion_tokens
     return data, total_prompt_tokens, total_completion_tokens
 
-def tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_id, top_k=70):
+def tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_id, top_k=50):
     if(lease_ids != []):
-        print("Filtering by Lease Ids:", lease_ids)
         resp = qdrant.query_points(
             collection_name=collection_name,
             query=message_vector,
@@ -203,14 +204,13 @@ def tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_
             ),)
     points = resp.points
     results = points
-    print("Count of Results Pre Cutoff:", len(results))
-    print("Scores of Results Pre Cutoff:", [p.score for p in points])
+
     if points:
         best = points[0].score
         cutoff = best * .6
         results = [p for p in points if p.score >= cutoff]
 
-    print("Count of Results Post Cutoff:", len(results))
+
     if not results:
         print("No Results found for Tenant_ID and Company_Id", tenant_id, company_id)
         return
@@ -222,6 +222,46 @@ def tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_
         ])
     return context
 
+
+def normalize_sources(raw_sources):
+    """
+    Returns a list[dict] shaped like:
+    { tenant_name, source_doc, pageNumber, highlight_text }
+    Ignores strings like 'Signed URL: ...'
+    """
+    if not raw_sources:
+        return []
+
+    # If it's a dict, assume it's one source object
+    if isinstance(raw_sources, dict):
+        raw_sources = [raw_sources]
+
+    # If it's a string, it's not a source object
+    if isinstance(raw_sources, str):
+        return []
+
+    normalized = []
+    for s in raw_sources:
+        if not isinstance(s, dict):
+            # Skip strings, numbers, etc.
+            continue
+
+        # Require at least doc + page to be useful
+        source_doc = s.get("source_doc") or s.get("sourceDoc")
+        page = s.get("pageNumber") or s.get("page") or s.get("page_number")
+
+        try:
+            page = int(page)
+        except: 
+            page = "N/A"
+        normalized.append({
+            "tenant_name": s.get("tenant_name") or s.get("tenantName"),
+            "source_doc": source_doc,
+            "pageNumber": page,
+            "highlight_text": s.get("highlight_text") or s.get("highlightText") or "",
+        })
+
+    return normalized
 def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, claude_model, lease_ids):
     context = tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_id)
     now = datetime.now()
@@ -287,13 +327,22 @@ IMPORTANT:
 
 Required JSON format:
 
+The json wants a short and long answer. This is where you will answer the questions. Short answer less than 750 characters. Short Answer Must contain the Tenants Name
+
+ Long answer to limit of max tokens
+
 ```json
-[
-  Curly Bracket
-  "tenant_name": "The name of the tenant",
+[    
+    Curly Bracket
+    'short_answer': Enter_Short_Response Here
+    'long_answer': Enter_Long_Answer Here
+(1 short and long answer per response. Many sources potential)
+  (If no sources: omit)'sources': Curly Bracket 
+    "tenant_name": "The name of the tenant",
     "source_doc": "leaselink/dairy_queen/",
     "pageNumber": 12,
-    "highlight_text": "abc-123"
+    "highlight_text": "abc-123",
+    Curly Bracket close
   Curly bracket close
 ]
 
@@ -322,36 +371,42 @@ Required JSON format:
 
 
     json_data = Qdrant_ChatGPT._extract_after_fence(chat_message, "json")
-
+    short_answer = ''
+    long_answer = ''
     if json_data:
         merged = {}
-        for d in json_data:
+        long_answer
+        for data in json_data:
 
-
-            key = (d.get('source_doc'), d.get('pageNumber'))
-            signed_url = Supabase_api.get_signed_url(supabase, "lease-docs", d.get('source_doc'))
-            viewer_url = ""
-            if d.get('pageNumber') is None:
-                viewer_url = f"{signed_url}&highlight_text={d.get('highlight_text')}"
-            else:
-                viewer_url = f"{signed_url}#page={d.get('pageNumber')}&highlight_text={d.get('highlight_text')}"
-            if key not in merged:
-                merged[key] = {
-                    'tenant_name': d.get('tenant_name'),
-                    "source_doc": d.get("source_doc"),
-                    "pageNumber": d.get('pageNumber'),
-                    "highlight_text": d.get('highlight_text', ""),
-                    "viewer_url": viewer_url
-                }   
-
-            else:
-                ht = d.get("highlight_text", "")
-                if ht and ht not in merged[key]['highlight_text']:
-                    merged[key]['highlight_text'] = (merged[key]['highlight_text'] + " | " + ht).strip(" |")
-            json_data = list(merged.values())
-
-    return response_message, json_data or [], prompt_tokens, completion_tokens
-
+            short_answer = json_data[0].get('short_answer')
+            long_answer = json_data[0].get('long_answer')
+            print("Short Answer", short_answer)
+            print("Long Answer", long_answer)
+            sources = normalize_sources(data.get('sources'))
+            for s in sources:
+                print("Source", s)
+                key = (s.get('source_doc'), s.get('pageNumber'))
+                signed_url = Supabase_api.get_signed_url(supabase, "lease-docs", s.get('source_doc'))
+                viewer_url = ""
+                if s.get('pageNumber') is None:
+                    viewer_url = f"{signed_url}&highlight_text={s.get('highlight_text')}"
+                else:
+                    viewer_url = f"{signed_url}#page={s.get('pageNumber')}&highlight_text={s.get('highlight_text')}"
+                if key not in merged:
+                    merged[key] = {
+                        'tenant_name': s.get('tenant_name'),
+                        "source_doc": s.get("source_doc"),
+                        "pageNumber": s.get('pageNumber'),
+                        "highlight_text": s.get('highlight_text', ""),
+                        "viewer_url": viewer_url,
+                    }   
+                else:
+                    ht = s.get("highlight_text", "")
+                    if ht and ht not in merged[key]['highlight_text']:
+                        merged[key]['highlight_text'] = (merged[key]['highlight_text'] + " | " + ht).strip(" |")
+                json_data = list(merged.values())
+    
+    return short_answer, long_answer, json_data or [], prompt_tokens, completion_tokens
 def rephrase_question(question: str, claude_model: str) -> str:
         print("Rephrase Question")
         now = datetime.now()
@@ -417,110 +472,6 @@ RULES:
 
         return ai_message, message_vector, prompt_tokens, completion_tokens, embedding_token_count
 
-def final_property_chat(rephrased_message, tenant_data, oldmessages, claude_model, collection_name, total_square_footage):
-    print("Final Property Chat")
-    now = datetime.now().strftime("%B %d, %Y")
-    total_prompt_tokens = 0
-    total_completion_tokens = 0
-    system_prompt = f"""You are a helpful assistant answering questions about ai commercial leases for property management companies. Because of the large amount of data you have to work with we have already filtered it down to relevant information.
-    columns that end with psf mean per square foot.
-    If they asked about total square footage of the property use this number: {total_square_footage}. If they didn't ask about it. It will be zero.
-    Be very careful giving averages for expected rents financial obligations. We don't want to have any semblance of price fixing.
-    Here is each tenants relevant data: {tenant_data}. It is sorted by Tenant_id and within each tenant it is sorted by the most recent lease information.
-    Here are previous messages related to this tenant:
-Each message includes a role:
-- "user" means it was written by the property manager
-- "assistant" means it was your previous response
-
-{oldmessages}
-If a user asks a time-based question (e.g., about rent, terms, insurance), use the following as the current date:
-** {now}**
-
-Many Time Based Questions will reference documents that say term between September 2021 - August 2025
-
-If it is a Day in July 2025. That falls within that period. If the month and Year are outside that date and time. It does not fall within that period.
----
-If the provided tenant data says something like ai_message: "I don't have any context for this tenant" Do not ask for more information about that tenant. It has already been queried and found nothing.
-""" + """
-``` json
-[
-{ 
-    {
-    "tenant_id": "the tenant uuid that you need more information about"
-    "vector_query": "a concise vector search query that will help find more relavant information about this tenant",
-    },
-    {... loop for each tenant}}]
-
----
-If you have enough information to answer the question, provide a concise and accurate answer based on the tenant data provided.
-At the end of your answer, if you used any specific tenant data chunks, return them in (Anything sorted by tenant_id that you used in your answer. Source_doc and lease_file_path are the same thing if no page number included use 0):
-``` json
-[
-{
-    "tenant_name": "The name of the tenant",
-    "source_doc": "leaselink/dairy_queen/",
-    "pageNumber": 12,
-    "highlight_text": "abc-123"
-},
-{... loop for each chunk used in your answer}}]
-"""
-    chat_response = claude.messages.create(
-        model=claude_model,
-        system=(system_prompt),
-        messages=[
-            {"role": "user", 'content': [
-                {
-                    'type': 'text',
-                    'text': rephrased_message
-                }
-            ]}
-        ],
-        temperature=0.0,
-        max_tokens=8000
-    )
-    chat_message = chat_response.content[0].text
-    tokens = chat_response.usage
-    total_prompt_tokens += tokens.input_tokens
-    total_completion_tokens += tokens.output_tokens
-    final_embedding_token_count = 0
-
-
-
-    json_data = Qdrant_ChatGPT._extract_after_fence(chat_message, "json")
-    print("JSON Data Extracted:", json_data)
-    if json_data:
-        merged = {}
-        for d in json_data:
-                key = (d.get('source_doc'), d.get('pageNumber'))
-                if key not in merged:
-                    if d.get('source_doc') is None:
-                        continue
-                    signed_url = Supabase_api.get_signed_url(supabase, "lease-docs", d.get('source_doc'))
-                    viewer_url = ""
-                    if d.get('pageNumber') is None:
-                        viewer_url = f"{signed_url}&highlight_text={d.get('highlight_text')}"
-                    else:
-                        viewer_url = f"{signed_url}#page={d.get('pageNumber')}&highlight_text={d.get('highlight_text')}"
-                    key = (d.get('source_doc'), d.get('pageNumber'))
-                    
-                    merged[key] = {
-                        'tenant_name': d.get('tenant_name'),
-                        "source_doc": d.get("source_doc"),
-                        "pageNumber": d.get('pageNumber'),
-                        "highlight_text": d.get('highlight_text', ""),
-                        "viewer_url": viewer_url
-                    }
-
-                else:
-                    ht = d.get("highlight_text", "")
-                    if ht and ht not in merged[key]['highlight_text']:
-                        merged[key]['highlight_text'] = (merged[key]['highlight_text'] + " | " + ht).strip(" |")
-        json_data = list(merged.values())
-
-    response_message = re.sub(r"```(?:json)\s*.*?```", "", chat_message, flags=re.DOTALL|re.IGNORECASE).strip()
-
-    return response_message, json_data, total_prompt_tokens, total_completion_tokens,final_embedding_token_count or 0.0
-
         
 
 def property_chat_request(collection_name, property_id,message, oldData, claude_model):
@@ -545,10 +496,7 @@ def property_chat_request(collection_name, property_id,message, oldData, claude_
         all_prompt_tokens += prompt_tokens
         all_completion_tokens += completion_tokens
 
-        """final_response, json_data, prompt_tokens, completion_tokens, embedding_token_count_2 = final_property_chat(message, tenantdata, oldData, claude_model, collection_name, total_square_footage)
-        all_prompt_tokens += prompt_tokens
-        all_completion_tokens += completion_tokens
-        all_embedding_token_count += embedding_token_count_2"""
+
         prompt_cost = (all_prompt_tokens / 1000 * 0.003) + (all_embedding_token_count / 1000 * 0.00013)
         completion_cost = all_completion_tokens / 1000 * 0.015
         
@@ -556,6 +504,7 @@ def property_chat_request(collection_name, property_id,message, oldData, claude_
         return tenantdata, all_prompt_tokens, prompt_cost, all_completion_tokens, completion_cost
     except Exception as e:
         print("Error in property chat request:", e)
+        traceback.print_exc()
         prompt_cost = (all_prompt_tokens / 1000 * 0.01) + (all_embedding_token_count / 1000 * 0.00013)
         completion_cost = all_completion_tokens / 1000 * 0.03
         
