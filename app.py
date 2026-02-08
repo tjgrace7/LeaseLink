@@ -801,7 +801,7 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
                 print("LLM returned None.")
         elif entity_type =='property':
     
-            tenant_data, prompt_tokens, prompt_cost, completion_tokens, completion_cost = property_chat.property_chat_request(collectionName, entity_id, message, oldmessages, claude_model)
+            tenant_data, prompt_tokens, prompt_cost, completion_tokens, completion_cost = property_chat.property_chat_request(collectionName, entity_id, message, oldmessages, claude_model, company_id)
             if tenant_data:
                 supabase_client.table("entity_questions").insert(
                     [
@@ -818,26 +818,48 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
                             "entity": entity_type,
                         }]).execute()
                 time.sleep(2)
-                for tenant in tenant_data:
-                    print("Tenant")
-                    supabase_client.table('entity_questions').insert(
-                        [
-                            {
-                                "entity_id": entity_id,
-                                "company_id": company_id,
-                                "message": tenant['ai_response'],
-                                "role": 'assistant',
-                                "session_id": session_id,
-                                'auth_id': auth_id,
-                                'message_cost': completion_cost/len(tenant_data),
-                                'prompt_tokens': 0,
-                                'completion_tokens': completion_tokens/len(tenant_data),
-                                'entity': entity_type,
-                                'sources': tenant['source_docs'],
-                                'longAnswer': tenant['long_answer']
-                            }
-                        ]
-                    ).execute()
+                if isinstance(tenant_data, list) and all(isinstance(t, dict) for t in tenant_data):
+                    for tenant in tenant_data:
+                        print("Tenant")
+                        supabase_client.table('entity_questions').insert(
+                            [
+                                {
+                                    "entity_id": entity_id,
+                                    "company_id": company_id,
+                                    "message": tenant['ai_response'],
+                                    "role": 'assistant',
+                                    "session_id": session_id,
+                                    'auth_id': auth_id,
+                                    'message_cost': completion_cost/len(tenant_data),
+                                    'prompt_tokens': 0,
+                                    'completion_tokens': completion_tokens/len(tenant_data),
+                                    'entity': entity_type,
+                                    'sources': tenant['source_docs'],
+                                    'longAnswer': tenant['long_answer']
+                                }
+                            ]
+                        ).execute()
+                else:
+                        supabase_client.table('entity_questions').insert(
+                            [
+                                {
+                                    "entity_id": entity_id,
+                                    "company_id": company_id,
+                                    "message": tenant_data,
+                                    "role": 'assistant',
+                                    "session_id": session_id,
+                                    'auth_id': auth_id,
+                                    'message_cost': completion_cost,
+                                    'prompt_tokens': 0,
+                                    'completion_tokens': completion_tokens,
+                                    'entity': entity_type,
+                                    'sources': "",
+                                    'longAnswer': ""
+                                }
+                            ]
+                        ).execute()
+            else:
+                print("LLM returned None.")
         print(email_data)
         
 

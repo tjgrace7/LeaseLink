@@ -31,7 +31,7 @@ MAX_WORKERS = 5
 from datetime import datetime
 
 
-def get_propertyTenants(property_id):
+def get_propertyTenants(property_id, company_id):
     print("Get Property Tenants")
     pt = supabase.table("Property_Tenant").select("*").eq("property_id", property_id).execute()
     tenant_ids = [row["tenant_id"] for row in (pt.data or []) if row.get("tenant_id")]
@@ -42,7 +42,9 @@ def get_propertyTenants(property_id):
     tenants_resp = supabase.table('tenant').select('*').in_('tenant_id', tenant_ids).execute()
 
     tenants = tenants_resp.data or []
-
+    if tenants[0].get('property_management_id') != company_id:
+        print("Company Id does not match id for tenants")
+        return None
     return tenants
 
 def normalize_tenant(tenant):
@@ -474,7 +476,7 @@ RULES:
 
         
 
-def property_chat_request(collection_name, property_id,message, oldData, claude_model):
+def property_chat_request(collection_name, property_id,message, oldData, claude_model, company_id):
     all_prompt_tokens = 0
     all_completion_tokens = 0
     all_embedding_token_count = 0
@@ -482,8 +484,13 @@ def property_chat_request(collection_name, property_id,message, oldData, claude_
         "Sorry, there was an error processing your question. Please try again later.",
     )
     try:
+        default_response = (
+        "Sorry, there was an error processing your question. Please try again later.",
+        )
+        tenants = get_propertyTenants(property_id, company_id)
         
-        tenants = get_propertyTenants(property_id)
+        if tenants == None:
+            return default_response, all_prompt_tokens, 0.0, all_completion_tokens, 0.0
 
 
         ai_message, message_vector, prompt_tokens, completion_tokens, embedding_token_count = rephrase_question(message, claude_model)
@@ -508,5 +515,5 @@ def property_chat_request(collection_name, property_id,message, oldData, claude_
         prompt_cost = (all_prompt_tokens / 1000 * 0.01) + (all_embedding_token_count / 1000 * 0.00013)
         completion_cost = all_completion_tokens / 1000 * 0.03
         
-        return default_response, all_prompt_tokens, prompt_cost, all_completion_tokens, completion_cost, []
+        return default_response, all_prompt_tokens, prompt_cost, all_completion_tokens, completion_cost
     
