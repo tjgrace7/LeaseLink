@@ -278,7 +278,7 @@ Return STRICT JSON ONLY (no markdown, no extra text):
     completion_tokens = chat_response.usage.completion_tokens
     return response, prompt_tokens, completion_tokens
 
-def extract_tenant_data(tenant_id: str, unit_id: str, company_id: str, claude_model="claude-sonnet-4-20250514", collection_name = 'Lease_Link', time_update = False) -> float:
+def extract_tenant_data(tenant_id: str, unit_id: str, company_id: str, claude_model="claude-sonnet-4-20250514", collection_name = 'Lease_Link', time_update = False, custom_columns = []) -> float:
     """
     Run final check on lease data for a given tenant_id.
     Returns the cost of the final check operation.
@@ -394,7 +394,7 @@ def extract_tenant_data(tenant_id: str, unit_id: str, company_id: str, claude_mo
                     lease_file_paths.append(lease['lease']['lease_file_path'])
                 past_context = context_get(query_description(tenant_id, unit_id, desc, collection_name, past_top_k, lease_file_paths))
                 
-            prompt_tokens, completion_tokens, value = review_extraction_clases(column,  tenant, future_context, future_effective_date, current_context, past_context, original_context, claude_model, lease_commencement_date, time_update)
+            prompt_tokens, completion_tokens, value = review_extraction_clases(column,  tenant, future_context, future_effective_date, current_context, past_context, original_context, claude_model, lease_commencement_date, time_update, custom_columns)
             if column == 'lease_commencement_date' and lease_commencement_date == None:
                 try:
                     data = supabase.table('Lease_Extractions').select('lease_commencement_date').eq('id', extraction_id).single().execute()
@@ -469,7 +469,7 @@ def extract_tenant_data(tenant_id: str, unit_id: str, company_id: str, claude_mo
 def query_description(tenant_id, unit_id, description, collection_name, top_k, leases):
     
     message_vector = OpenAIClient.embeddings.create(
-            input="Use most recent document, Amendment or Renewal if available. Use primary lease when no info available for description in amendment" + description,
+            input=description,
             model="text-embedding-3-large"
      ).data[0].embedding
     if isinstance(leases, str):
@@ -538,7 +538,7 @@ def context_get(results):
     )
     return context
 
-def review_extraction_clases(column, tenant, future_context, future_effective_date, current_context, past_context, original_context, claude_model, lease_commencement_date, time_update):
+def review_extraction_clases(column, tenant, future_context, future_effective_date, current_context, past_context, original_context, claude_model, lease_commencement_date, time_update, custom_columns):
     """
     Review extraction for a specific column.
     """
@@ -741,7 +741,25 @@ Provide ONLY the JSON response with no additional text."""
             else: 
                 value = None
             return section_prompt_tokens, section_completion_tokens, value
-    
+    if custom_columns != []:
+        if column not in custom_columns:
+            if current_value not in [None, '', "Null", 'null']:
+                value ={
+                                'page': cell['page'],
+                                'source_doc': cell['source_doc'],
+                                'value': current_value,
+                                'confidence_score': cell['confidence_score'],
+                                'future_value': cell['future_value'],
+                                'future_effective_date': cell['future_effective_date'],
+                                'reason': cell['reason'],
+                                'manual_review': cell['manual_review'],
+                                'is_manual_change': cell['is_manual_change']
+                                
+                            }
+            else: 
+                value = None
+            return section_prompt_tokens, section_completion_tokens, value
+
     response, prompt_tokens, completion_tokens = claude_message(claude_model, system_prompt, user_message, max_tokens=500)
     section_prompt_tokens += prompt_tokens
     section_completion_tokens += completion_tokens

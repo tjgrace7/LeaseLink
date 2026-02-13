@@ -175,7 +175,7 @@ Rules:
         - Do not use execution/effective dates unless the lease explicitly defines them as the commencement date. 
         - Do not infer from possession or rent commencement.
         - If commencement is conditional and no calendar date is stated, return null.
-        - If null return manual_review = true
+        - If null or No Commencement Date return manual_review = true
         - If the Current Value was changed manually Do Not Adjust""",
         'required_document(s)': 'Original_Lease',
         'need_current_time': False
@@ -271,11 +271,10 @@ Rules:
         'need_current_time': True
     },
     'premises_description': {
-        'prompt': """Task: Summarize how the leased premises are defined, including suite/unit identifier(s), building or address reference if stated, and the type of area measurement used (e.g., RSF/USF) only if expressly stated. 
-        Rules:
-        - Include any expressly stated inclusions or exclusions that materially define the premises (e.g., including mezzanine, excluding exterior patio or storage). 
-        - Do not restate full legal descriptions, metes-and-bounds, or exhibit text verbatim. 
-        - If the premises cannot be clearly identified from the provided documents, leave null.""",
+        'prompt': """Task: Summarize how the leased premises are defined or described, including suite/unit identifier(s), building or address reference if stated, and the type of area measurement used (e.g., RSF/USF) only if expressly stated.
+Rules:
+- Include any expressly stated inclusions or exclusions that materially define the premises (e.g., including mezzanine, excluding exterior patio or storage).
+- If the premises cannot be clearly identified from the provided documents, leave null.""",
         'required_document(s)': "Original_Lease",
         'need_current_time': False
     },
@@ -325,12 +324,13 @@ Rules:
         'need_current_time': False
     },
     'permitted_use': {
-        'prompt': """Task: Extract the tenant’s permitted use of the premises as expressly stated in the lease. Summarize the allowed use(s) in clear, concise language, including any material limitations, conditions,
-        or restrictions that define or narrow the use (e.g., exclusivity limitations, prohibited uses, or operational constraints), only if explicitly stated. 
+        'prompt': """Task: Extract only the clause that expressly states what business activity the tenant is authorized to conduct within the premises. Summarize the permitted use in clear, concise language, limited strictly to the specific business activities described in the lease.
+
         Rules:
-        - Do not broaden, interpret, or generalize the permitted use beyond the lease language.
-        - Do not infer permitted use from tenant name, industry, zoning, or customary practice. 
-        - If the lease does not expressly state a permitted use, leave this field null.""",
+        - Do not infer use from tenant name, industry, branding, or context.
+        - Extract only affirmative language granting the tenant the right to operate a specific business or use.
+        - Ignore compliance with laws, zoning ordinances, governmental regulations, or “lawful use.”
+        - If no affirmative permitted use clause exists, return null.""",
         'required_document(s)': 'All',
         'need_current_time': False
     },
