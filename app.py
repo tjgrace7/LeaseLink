@@ -826,7 +826,7 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
                                 {
                                     "entity_id": entity_id,
                                     "company_id": company_id,
-                                    "message": tenant['ai_response'],
+                                    "message": tenant['short_answer'],
                                     "role": 'assistant',
                                     "session_id": session_id,
                                     'auth_id': auth_id,

@@ -196,6 +196,8 @@ TODAY'S DATE: {now} (America/Chicago)
 
 IMPORTANT: You are analyzing ONE lease document at a time. Do not worry about comparing to other leases.
 
+
+
 DATE EXTRACTION RULES:
 
 1. effective_date (when THIS lease's term starts):
@@ -235,6 +237,7 @@ DATE EXTRACTION RULES:
    - "Amendment" = modifies an existing lease
    - "Renewal" = extends/renews an existing lease
    - Look for keywords: "Amendment", "First Amendment", "Renewal", "Extension", "Addendum"
+
 
 EXAMPLES:
 - Original lease: Effective 2021-08-01, Term 5 years → Expiration 2026-07-31, Status "Present", Type "Original"
@@ -631,7 +634,7 @@ EXTRACTION INSTRUCTIONS
 
 4. NEEDS_CORRECTION LOGIC:
    needs_correction = true IF:
-   - No current database value exists, OR
+   - No current database value exist or is null (ALWAYS RETURN NEEDS_CORRECTION IF NULL)
    - Current database value differs from extracted value in meaning
    - Here is the current database value: {current_value}
    

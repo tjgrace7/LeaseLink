@@ -108,7 +108,7 @@ def run_ai_for_tenant(job, collection_name, message_vector, ai_message, claude_m
     total_prompt_tokens += prompt_tokens
     total_completion_tokens += completion_tokens
     row = { 
-        "ai_response": message_data,
+        "short_answer": message_data,
         "tenant_id": tenant_id,
         "lease_file_path": None,
         "tenant_name": job["tenant_name"],
@@ -373,20 +373,20 @@ The json wants a short and long answer. This is where you will answer the questi
 
 
     json_data = Qdrant_ChatGPT._extract_after_fence(chat_message, "json")
-    short_answer = ''
-    long_answer = ''
+
+    json_data, short_answer, long_answer = sort_json(json_data)
+    
+    return short_answer, long_answer, json_data or [], prompt_tokens, completion_tokens
+def sort_json(json_data):
     if json_data:
         merged = {}
-        long_answer
         for data in json_data:
 
             short_answer = json_data[0].get('short_answer')
             long_answer = json_data[0].get('long_answer')
-            print("Short Answer", short_answer)
-            print("Long Answer", long_answer)
             sources = normalize_sources(data.get('sources'))
             for s in sources:
-                print("Source", s)
+
                 key = (s.get('source_doc'), s.get('pageNumber'))
                 signed_url = Supabase_api.get_signed_url(supabase, "lease-docs", s.get('source_doc'))
                 viewer_url = ""
@@ -407,8 +407,8 @@ The json wants a short and long answer. This is where you will answer the questi
                     if ht and ht not in merged[key]['highlight_text']:
                         merged[key]['highlight_text'] = (merged[key]['highlight_text'] + " | " + ht).strip(" |")
                 json_data = list(merged.values())
-    
-    return short_answer, long_answer, json_data or [], prompt_tokens, completion_tokens
+        return json_data, short_answer, long_answer
+
 def rephrase_question(question: str, claude_model: str) -> str:
         print("Rephrase Question")
         now = datetime.now()
@@ -441,6 +441,12 @@ RULES:
 2. Remove conversational fluff
 3. Preserve key details (tenant names, addresses, specific dates/amounts if mentioned)
 4. Don't add information not in the original question
+5. Determine if this question requires a full property overview. 
+
+```json Open Curly Bracket
+    needs_overview: True/False
+
+    Clost Curly Bracket`
             """),
             messages=[
                 {"role": "user", "content": [{
@@ -455,7 +461,9 @@ RULES:
         completion_tokens = token_usage.output_tokens
         ai_message = message_summary.content[0].text
         response_message = re.sub(r"```(?:json|emailjson)\s*.*?```", "", ai_message, flags=re.DOTALL|re.IGNORECASE).strip()
+        json_data = Qdrant_ChatGPT._extract_after_fence(ai_message, "json")
 
+        needs_review = json_data['needs_overview']
     
 
 
@@ -472,9 +480,103 @@ RULES:
 
                 
 
-        return ai_message, message_vector, prompt_tokens, completion_tokens, embedding_token_count
+        return ai_message, message_vector, prompt_tokens, completion_tokens, embedding_token_count, needs_review or False
 
-        
+def summary_response(short_messages, claude_model, question):
+    now = datetime.now()
+    system_prompt = f"""Your job is to summarize all the tenantdata from {short_messages}. It contains the source documents that were used to find the data. Combine each individual tenant Answer into 1 conscise summary.
+                TASK:
+Use the provided lease document excerpts to answer the user's question concisely and accurately.
+
+RULES:
+1. If excerpts don't contain relevant information, respond with: "No Data Available"
+2. Be concise - avoid unnecessary elaboration
+3. Extract tenant_id from context when answering
+4. Prioritize more recent documents when information conflicts
+
+CALCULATION & ANALYSIS CAPABILITIES:
+You may need to:
+- **Calculate rent amounts**: Apply escalation clauses, percentage rent, or prorated amounts based on dates
+- **Determine time periods**: Calculate lease terms, notice periods, or option exercise deadlines
+- **Interpret co-tenancy clauses**: Define triggers, remedy periods, and rent reduction formulas
+- **Apply conditional logic**: Determine if conditions are met (e.g., sales thresholds, occupancy requirements)
+
+When performing calculations:
+- Show your work clearly but concisely
+- State the formula or clause used
+- Include relevant dates and amounts
+- Note any assumptions made
+
+
+
+---
+
+ANSWER FORMAT EXAMPLES:
+
+**For rent calculations:**
+"Monthly base rent: $5,000. With 3% annual escalation from Jan 1, 2024, current rent (as of {now.strftime("%B %Y")}) is $5,150. (tenant_id: ABC-001)"
+
+**For co-tenancy clauses:**
+"Co-tenancy triggered if Anchor Tenant (defined as grocery store ≥40,000 SF) goes dark for >90 days. Remedy: Tenant may pay alternative rent of lesser of (a) $2/SF/month or (b) 8% of gross sales. (tenant_id: ABC-001)"
+
+**For date-based questions:**
+"Lease expires June 30, 2026. Tenant has two 5-year renewal options, exercisable with 180 days notice. Next option deadline: December 31, 2025. (tenant_id: ABC-001)"
+
+**For conditional clauses:**
+"Percentage rent triggers at $500,000 annual sales threshold. Current lease year: Jan 1 - Dec 31, 2026. If threshold met, tenant pays 6% of gross sales exceeding $500,000. (tenant_id: ABC-001)"
+
+---
+
+CITATION REQUIREMENTS:
+At the end of your answer, return ONLY the context chunks you actually used in JSON format.
+
+IMPORTANT:
+- Include ONLY chunks that directly supported your answer or calculations
+- If multiple chunks from the same document page were used, COMBINE them into a single JSON object
+- The `highlight_text` should contain the exact text from the chunk(s) used
+- DO NOT return duplicate entries with the same `source_doc` and `pageNumber`
+
+Required JSON format:
+
+The json wants a short and long answer. This is where you will answer the questions. Short answer less than 750 characters. Short Answer Must contain the Tenants Name
+
+ Long answer to limit of max tokens
+
+```json
+[    
+    Curly Bracket
+    'short_answer': Enter_Short_Response Here
+    'long_answer': Enter_Long_Answer Here
+(1 short and long answer per response. Many sources potential)
+  (If no sources: omit)'sources': Curly Bracket 
+    "tenant_name": "All Tenants",
+    "source_doc": "leaselink/dairy_queen/",
+    "pageNumber": 12,
+    "highlight_text": "abc-123",
+    Curly Bracket close
+  Curly bracket close
+]
+             """
+    message_summary = claude.messages.create(
+            model=claude_model,
+            system=system_prompt,
+            messages=[
+                    {"role": "user", "content": [{
+                        'type': 'text',
+                        'text': question}]}
+                ],
+            temperature=0.0,
+            max_tokens=10000)
+    token_usage = message_summary.usage
+    prompt_tokens = token_usage.input_tokens
+    completion_tokens = token_usage.output_tokens
+    ai_message = message_summary.content[0].text
+    json_data = Qdrant_ChatGPT._extract_after_fence(ai_message, 'json')
+
+    json_data, short_answer, long_answer = sort_json(json_data)
+
+    return short_answer, long_answer, json_data, completion_tokens, prompt_tokens
+            
 
 def property_chat_request(collection_name, property_id,message, oldData, claude_model, company_id):
     all_prompt_tokens = 0
@@ -493,7 +595,7 @@ def property_chat_request(collection_name, property_id,message, oldData, claude_
             return default_response, all_prompt_tokens, 0.0, all_completion_tokens, 0.0
 
 
-        ai_message, message_vector, prompt_tokens, completion_tokens, embedding_token_count = rephrase_question(message, claude_model)
+        ai_message, message_vector, prompt_tokens, completion_tokens, embedding_token_count, needs_overview = rephrase_question(message, claude_model)
         all_prompt_tokens += prompt_tokens
         all_completion_tokens += completion_tokens
         all_embedding_token_count += embedding_token_count
@@ -502,7 +604,25 @@ def property_chat_request(collection_name, property_id,message, oldData, claude_
         tenantdata, prompt_tokens, completion_tokens= get_supabase_data(tenants,claude_model, ai_message,  collection_name, message_vector)
         all_prompt_tokens += prompt_tokens
         all_completion_tokens += completion_tokens
-
+        print("Needs Overview", needs_overview)
+        if needs_overview:
+           ai_answers = [
+                (answer['short_answer'], answer['source_docs'], answer['square_footage'])
+                for answer in tenantdata
+            ]
+           short_answer, long_answer, json_data,prompt_tokens, completion_tokens = summary_response(ai_answers, claude_model, message)
+           all_prompt_tokens += prompt_tokens
+           all_completion_tokens += completion_tokens
+           summary = {
+            "short_answer": short_answer,
+            "tenant_id": "All Tenants",
+            "lease_file_path": None,
+            "tenant_name": "All Tenants",
+            "source_docs": json_data,
+            'long_answer': long_answer,
+            "square_footage": sum([sf['square_footage'] for sf in tenantdata]),
+           }
+           tenantdata.append(summary)
 
         prompt_cost = (all_prompt_tokens / 1000 * 0.003) + (all_embedding_token_count / 1000 * 0.00013)
         completion_cost = all_completion_tokens / 1000 * 0.015
