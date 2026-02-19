@@ -108,7 +108,7 @@ def run_ai_for_tenant(job, collection_name, message_vector, ai_message, claude_m
     total_prompt_tokens += prompt_tokens
     total_completion_tokens += completion_tokens
     row = { 
-        "short_answer": message_data,
+        "short_answer": f"{job['tenant_name']} \n {message_data}",
         "tenant_id": tenant_id,
         "lease_file_path": None,
         "tenant_name": job["tenant_name"],
@@ -272,8 +272,7 @@ def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, a
 CONTEXT:
 - Current date: {now.strftime("%B %d, %Y")}
 - Your goal is to provide the most accurate answer possible for the tenant. This system is answering questions for each tenant seperately. Use only the provided context for the specific tenant.
-
-Provide each Tenants Name at the top of the response
+- DO NOT USE Tenant Name in short or long_answer
 
 TASK:
 Use the provided lease document excerpts to answer the user's question concisely and accurately.
@@ -336,10 +335,12 @@ The json wants a short and long answer. This is where you will answer the questi
 ```json
 [    
     Curly Bracket
-    'short_answer': Enter_Short_Response Here
-    'long_answer': Enter_Long_Answer Here
+    'short_answer': Enter_Short_Response Here (Do not add Tenant Name to message)
+    'long_answer': Enter_Long_Answer Here (Do not add Tenant Name to Message)
 (1 short and long answer per response. Many sources potential)
-  (If no sources: omit)'sources': Curly Bracket 
+  (If no sources: Curly Bracket  
+  "tenant_name": name of the tenant,
+  )'sources': Curly Bracket 
     "tenant_name": "The name of the tenant",
     "source_doc": "leaselink/dairy_queen/",
     "pageNumber": 12,
@@ -381,32 +382,39 @@ def sort_json(json_data):
     if json_data:
         merged = {}
         for data in json_data:
-
+            print("Json", json_data)
             short_answer = json_data[0].get('short_answer')
             long_answer = json_data[0].get('long_answer')
             sources = normalize_sources(data.get('sources'))
             for s in sources:
-
-                key = (s.get('source_doc'), s.get('pageNumber'))
-                signed_url = Supabase_api.get_signed_url(supabase, "lease-docs", s.get('source_doc'))
-                viewer_url = ""
-                if s.get('pageNumber') is None:
-                    viewer_url = f"{signed_url}&highlight_text={s.get('highlight_text')}"
+                print("S", s)
+                if s.get("source_doc") != None and s.get('pageNumber') != None:
+                    key = (s.get('source_doc'), s.get('pageNumber'))
+                    signed_url = Supabase_api.get_signed_url(supabase, "lease-docs", s.get('source_doc'))
+                    viewer_url = ""
+                    if s.get('pageNumber') is None:
+                        viewer_url = f"{signed_url}&highlight_text={s.get('highlight_text')}"
+                    else:
+                        viewer_url = f"{signed_url}#page={s.get('pageNumber')}&highlight_text={s.get('highlight_text')}"
+                    if key not in merged:
+                        merged[key] = {
+                            'tenant_name': s.get('tenant_name'),
+                            "source_doc": s.get("source_doc"),
+                            "pageNumber": s.get('pageNumber'),
+                            "highlight_text": s.get('highlight_text', ""),
+                            "viewer_url": viewer_url,
+                        }   
+                    else:
+                        ht = s.get("highlight_text", "")
+                        if ht and ht not in merged[key]['highlight_text']:
+                            merged[key]['highlight_text'] = (merged[key]['highlight_text'] + " | " + ht).strip(" |")
                 else:
-                    viewer_url = f"{signed_url}#page={s.get('pageNumber')}&highlight_text={s.get('highlight_text')}"
-                if key not in merged:
+                    key = s.get('tenant_name')
                     merged[key] = {
-                        'tenant_name': s.get('tenant_name'),
-                        "source_doc": s.get("source_doc"),
-                        "pageNumber": s.get('pageNumber'),
-                        "highlight_text": s.get('highlight_text', ""),
-                        "viewer_url": viewer_url,
-                    }   
-                else:
-                    ht = s.get("highlight_text", "")
-                    if ht and ht not in merged[key]['highlight_text']:
-                        merged[key]['highlight_text'] = (merged[key]['highlight_text'] + " | " + ht).strip(" |")
+                        'tenant_name': s.get('tenant_name')
+                    }
                 json_data = list(merged.values())
+
         return json_data, short_answer, long_answer
 
 def rephrase_question(question: str, claude_model: str) -> str:
@@ -614,7 +622,7 @@ def property_chat_request(collection_name, property_id,message, oldData, claude_
            all_prompt_tokens += prompt_tokens
            all_completion_tokens += completion_tokens
            summary = {
-            "short_answer": short_answer,
+            "short_answer": f"All Tenants \n {short_answer}",
             "tenant_id": "All Tenants",
             "lease_file_path": None,
             "tenant_name": "All Tenants",

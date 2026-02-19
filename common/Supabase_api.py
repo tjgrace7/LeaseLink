@@ -62,6 +62,7 @@ def get_signed_url(supabase_client, bucket, file_path):
             print("Signed URL:", signed_url)
         except Exception as e:
             print("Error getting signed URL", e)
+            signed_url = ""
     else:
         signed_url = ""
     return signed_url
