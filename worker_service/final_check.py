@@ -16,7 +16,8 @@ import tiktoken
 import uuid
 from worker_service import extraction_prompts
 import traceback
-from CPI import runCPICalculation
+
+from .CPI import runCPICalculation
 
 load_dotenv()
 
@@ -852,5 +853,3 @@ def point_to_dict(p):
     }
 
 
-
-extract_tenant_data('444fca82-1aac-4f4a-8397-225c338eba40', '3d5c0f56-0997-4405-9e0d-91d0f0537a7d', '917c34eb-bcf1-43d1-9120-9a3415f3acea', custom_columns=['base_rent_amount_current'])

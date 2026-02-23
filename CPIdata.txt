@@ -1,6 +1,6 @@
 {
   "status": "REQUEST_SUCCEEDED",
-  "responseTime": 106,
+  "responseTime": 104,
   "message": [],
   "Results": {
     "series": [
