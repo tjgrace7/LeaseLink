@@ -45,6 +45,8 @@ Rules:
             STEP 6: If the rent is not monthly, calculate the proper monthly rent by dividing the rent amount by the number of months in the billing period. EX: Quarterly rent of $3000 = Monthly rent of $1000, Annual rent of $12000 = Monthly rent of $1000 etc.
             STEP 7: Do not Just Return whatever value is in the lease! If the rent is not monthly, you must calculate the monthly rent amount.
             STEP 8: If you are unsure of your calculation, require manual review by setting manual_review to true.
+            STEP 9: In the Json Extraction Add a field about CPI_lease. Determine if the rent is a CPI lease or a normal rent lease (cpi_lease: true or false)
+            STEP 10: If cpi_lease = true, needs_correction = true
 
             ⚠️ DO NOT:
             - Choose the highest or most recent amount
@@ -334,15 +336,6 @@ Rules:
         'required_document(s)': 'All',
         'need_current_time': False
     },
-    'CPI_LEASE': {
 
-        'prompt': """Task: Determine if the lease contains a Consumer Price Index (CPI) rent escalation clause. 
-        Rules:
-        - Look for explicit references to CPI, Consumer Price Index, or similar inflation indices as a basis for rent adjustments. 
-        - Do not infer CPI clauses from general escalation language or market norms. 
-        - If a CPI clause is clearly stated, return true; otherwise, return false.""",
-        'required_document(s)': 'All',
-        'need_current_time': False
-    }
 
 }   

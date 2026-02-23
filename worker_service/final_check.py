@@ -16,6 +16,7 @@ import tiktoken
 import uuid
 from worker_service import extraction_prompts
 import traceback
+from CPI import runCPICalculation
 
 load_dotenv()
 
@@ -335,6 +336,7 @@ def extract_tenant_data(tenant_id: str, unit_id: str, company_id: str, claude_mo
         current_context = ""
         past_context = ""
         lease_commencement_date = None
+        
         if tenant['lease_commencement_date'] != None:
             if tenant['lease_commencement_date']['is_manual_change']:
                 lease_commencement_date = tenant['lease_commencement_date']['value']
@@ -408,12 +410,11 @@ def extract_tenant_data(tenant_id: str, unit_id: str, company_id: str, claude_mo
                 except Exception as e:
                     print("Lease Commencement:", lease_commencement_date)
                     print("Error fetching lease commencement date", e)
-            if column == 'CPI_LEASE':
-
-                print("CPI LEASE")
             total_prompt_tokens_claude += prompt_tokens
             total_completion_tokens_claude += completion_tokens
             all_columns[column] = value
+ 
+            
         
         prompt_cost = (total_prompt_tokens_claude / 1000 * 0.003)
         embedding_cost = total_embedding_tokens / 1000 * 0.00013
@@ -456,7 +457,6 @@ def extract_tenant_data(tenant_id: str, unit_id: str, company_id: str, claude_mo
             'hvac_responsibilities': all_columns['hvac_responsibilities'],
             'utility_responsibilities': all_columns['utility_responsibilities'],
             'permitted_use': all_columns['permitted_use'],
-            'CPI_LEASE': all_columns['CPI_LEASE']
             },
             on_conflict='id').execute()
         print(f"Final Cost - ${tenant_cost} (Prompt: ${prompt_cost + GPT_prompt_cost}, Completion: ${completion_cost + GPT_completion_cost}, Embedding: ${embedding_cost})")
@@ -718,7 +718,8 @@ CRITICAL JSON RULES:
 """
 
 
-
+   
+                
 
 
     user_message = f"""Extract the field: {column}
@@ -772,13 +773,20 @@ Provide ONLY the JSON response with no additional text."""
     if parsed and len(parsed) > 0:
         for item in parsed:
             if item['needs_correction']:
+                
                 extracted_value = item.get('value', '')
                 confidence = item.get('confidence_score', 0.0)
                 future_value = item.get('future_value', "null")
                 future_effect_date = item.get('future_effective_date', 'null')
                 reason = item.get('reason')
                 review = item.get('manual_review')
-
+                if column == 'base_rent_amount_current':
+                    cpi_lease = item.get('cpi_lease')
+                    if cpi_lease:
+                        rent, prompt_tokens, completion_tokens = runCPICalculation(tenant.get('tenant_id'))
+                        extracted_value = f"${str(rent)}"
+                        reason = 'CPI calculated by Lease Link'
+                        review = True
                     
                 if extracted_value not in [None, '', "Null", 'null']:
                     value ={
@@ -844,3 +852,5 @@ def point_to_dict(p):
     }
 
 
+
+extract_tenant_data('444fca82-1aac-4f4a-8397-225c338eba40', '3d5c0f56-0997-4405-9e0d-91d0f0537a7d', '917c34eb-bcf1-43d1-9120-9a3415f3acea', custom_columns=['base_rent_amount_current'])
