@@ -232,6 +232,7 @@ def normalize_sources(raw_sources):
     Ignores strings like 'Signed URL: ...'
     """
     if not raw_sources:
+        print("Nothing Returned")
         return []
 
     # If it's a dict, assume it's one source object
@@ -378,44 +379,82 @@ The json wants a short and long answer. This is where you will answer the questi
     json_data, short_answer, long_answer = sort_json(json_data)
     
     return short_answer, long_answer, json_data or [], prompt_tokens, completion_tokens
-def sort_json(json_data):
-    if json_data:
-        merged = {}
-        for data in json_data:
-            print("Json", json_data)
-            short_answer = json_data[0].get('short_answer')
-            long_answer = json_data[0].get('long_answer')
-            sources = normalize_sources(data.get('sources'))
-            for s in sources:
-                print("S", s)
-                if s.get("source_doc") != None and s.get('pageNumber') != None:
-                    key = (s.get('source_doc'), s.get('pageNumber'))
-                    signed_url = Supabase_api.get_signed_url(supabase, "lease-docs", s.get('source_doc'))
-                    viewer_url = ""
-                    if s.get('pageNumber') is None:
-                        viewer_url = f"{signed_url}&highlight_text={s.get('highlight_text')}"
-                    else:
-                        viewer_url = f"{signed_url}#page={s.get('pageNumber')}&highlight_text={s.get('highlight_text')}"
-                    if key not in merged:
-                        merged[key] = {
-                            'tenant_name': s.get('tenant_name'),
-                            "source_doc": s.get("source_doc"),
-                            "pageNumber": s.get('pageNumber'),
-                            "highlight_text": s.get('highlight_text', ""),
-                            "viewer_url": viewer_url,
-                        }   
-                    else:
-                        ht = s.get("highlight_text", "")
-                        if ht and ht not in merged[key]['highlight_text']:
-                            merged[key]['highlight_text'] = (merged[key]['highlight_text'] + " | " + ht).strip(" |")
-                else:
-                    key = s.get('tenant_name')
-                    merged[key] = {
-                        'tenant_name': s.get('tenant_name')
-                    }
-                json_data = list(merged.values())
 
-        return json_data, short_answer, long_answer
+
+def sort_json(json_data):
+    print("json_data type:", type(json_data))
+    try:
+        print(json.dumps(json_data, indent=2))
+    except Exception:
+        print("json_data (non-serializable):", str(json_data)[:500])
+
+    if json_data is None:
+        return [], None, None
+
+    # Normalize to a list of dicts
+    if isinstance(json_data, dict):
+        items = [json_data]
+    elif isinstance(json_data, list):
+        items = [x for x in json_data if isinstance(x, dict)]
+        if not items:
+            return [], None, None
+    else:
+        return [], None, None
+
+    # Pull answers from the first object
+    first = items[0]
+    short_answer = first.get("short_answer")
+    long_answer = first.get("long_answer")
+
+    merged = {}
+
+    for data in items:
+        sources = normalize_sources(data.get("sources"))
+
+        for s in sources:
+            if not isinstance(s, dict):
+                continue
+
+            tenant_name = s.get("tenant_name")
+            source_doc = s.get("source_doc")
+            page = s.get("pageNumber")
+            highlight = s.get("highlight_text", "") or ""
+
+            # Case 1: has doc + page -> build viewer_url + dedupe by (doc, page)
+            if source_doc is not None and page is not None:
+                key = (source_doc, page)
+
+                signed_url = Supabase_api.get_signed_url(
+                    supabase, "lease-docs", source_doc
+                )
+
+                # page is not None here, so always use #page=
+                viewer_url = f"{signed_url}#page={page}&highlight_text={highlight}"
+
+                if key not in merged:
+                    merged[key] = {
+                        "tenant_name": tenant_name,
+                        "source_doc": source_doc,
+                        "pageNumber": page,
+                        "highlight_text": highlight,
+                        "viewer_url": viewer_url,
+                    }
+                else:
+                    # append highlight text (avoid duplicates)
+                    if highlight and highlight not in merged[key]["highlight_text"]:
+                        merged[key]["highlight_text"] = (
+                            merged[key]["highlight_text"] + " | " + highlight
+                        ).strip(" |")
+
+            # Case 2: missing doc or page -> fallback to tenant_name grouping
+            else:
+                key = tenant_name or "unknown_tenant"
+                if key not in merged:
+                    merged[key] = {"tenant_name": tenant_name}
+
+    out = list(merged.values())
+    return out, short_answer, long_answer
+
 
 def rephrase_question(question: str, claude_model: str) -> str:
         print("Rephrase Question")
@@ -587,6 +626,8 @@ The json wants a short and long answer. This is where you will answer the questi
             
 
 def property_chat_request(collection_name, property_id,message, oldData, claude_model, company_id):
+    print("Company Id", company_id)
+
     all_prompt_tokens = 0
     all_completion_tokens = 0
     all_embedding_token_count = 0
