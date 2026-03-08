@@ -41,6 +41,8 @@ import asyncio
 from fastapi.responses import RedirectResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+
+from help.help_chat import help_chat
 print("Boot 2: imports complete", flush=True)
 # --------------------------- Logging ---------------------------------
 log = logging.getLogger("leaselink-app")
@@ -563,6 +565,34 @@ async def tenant_send_message(
     ).start()
 
     return {"status": "Message is being processed"}
+
+@app.post("/help")
+async def help_send_message(
+    request: Request,
+    authorization: Optional[str] = Header(default=None),
+):
+    body = await request.body()
+    print("raw body: ", body)
+    message_request = await request.json()
+
+    token = authorization.replace("Bearer", "").strip() if authorization else None
+    if not token:
+        return JSONResponse(status_code=401, content={"error": "Missing or invalid token"})
+
+    auth = verify_supabase_jwt(token)
+    if not auth:
+        raise HTTPException(status_code=403, detail="Unauthorized")
+
+    if auth["sub"] != message_request.get("auth_id"):
+        raise HTTPException(status_code=403, detail="auth_id does not match token")
+
+    threading.Thread(
+        target=handle_help_chat,
+        args=(message_request,),
+        daemon=True,
+    ).start()
+
+    return {"status": "Message is being processed"}
 @app.get('/api/integrations/email/start')
 async def start_email_integration(request: Request, provider: str):
 
@@ -840,7 +870,7 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
                             ]
                         ).execute()
                 else:
-                        supabase_client.table('entity_questions').insert(
+                        supabase_client.table('help_chat').insert(
                             [
                                 {
                                     "entity_id": entity_id,
@@ -866,6 +896,52 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
     except Exception as e:
         print("Error in threaded message handler:", e)
 
+def handle_help_chat(message_request):
+    try:
+        auth_id = message_request.get("auth_id")
+        message = message_request.get("message")
+        session_id = message_request.get("session_id")
+        company_id = message_request.get("company_id")
+        
+        if not company_id or not message or not session_id or not auth_id:
+            print("Missing required fields")
+            return
+
+        oldmessages = Supabase_api.message_get_request(supabase_client, session_id, "Help_Chats")
+        final_message, links, prompt_cost, completion_cost = help_chat(
+            message,
+            oldmessages,
+            claude_model,
+        )
+        print("Links", links)
+        if final_message:
+            supabase_client.table("Help_Chats").insert(
+                [
+                    {
+                        "company_id": company_id,
+                        "message": message,
+                        "role": "user",
+                        "session_id": session_id,
+                        "auth_id": auth_id,
+                        "message_cost": prompt_cost,
+                    }]).execute()
+            time.sleep(2)
+            supabase_client.table("Help_Chats").insert(
+                    {
+                        "company_id": company_id,
+                        "message": final_message,
+                        "role": "assistant",
+                        "session_id": session_id,
+                        "auth_id": auth_id,
+                        "message_cost": completion_cost,
+                        "links": links
+                    },
+                
+            ).execute()
+        else:
+            print("LLM returned None.")
+    except Exception as e:
+        print("Error in threaded help chat handler:", e)
 # ------------------------------ Main ----------------------------------
 if __name__ == "__main__":
     import uvicorn
