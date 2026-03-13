@@ -1,4 +1,29 @@
-from qdrant_client.http.models import  Filter, FieldCondition, MatchValue, SearchParams
+"""
+Core RAG pipeline for tenant lease Q&A (the "entity_questions" chat endpoint).
+
+This module handles the full cycle of answering a property manager's question about
+a specific tenant's lease documents:
+
+  1. get_relevant_chunks: The main entry point.
+     - Rephrases the user's question with Claude to improve Qdrant search relevance.
+     - Embeds the rephrased query with text-embedding-3-large.
+     - Searches the Lease_Link Qdrant collection filtered by tenant_id, company_id,
+       and optionally unit_id.
+     - Optionally fetches and appends relevant email chunks from email_chunks_v1 when
+       the company has Email_Function enabled.
+     - Builds a system prompt and calls Claude to produce the final answer.
+     - Strips JSON fence blocks from the answer text before returning.
+     - Parses source citations from the response JSON and enriches them with signed
+       PDF URLs so the frontend can deep-link to the exact page.
+
+  2. JSON parsing utilities (_extract_braced_json, _extract_after_fence):
+     Reliably extract the first complete JSON object/array from an LLM response that
+     may contain prose, markdown, and multiple fenced blocks.
+
+Token costs are calculated and returned alongside the answer for billing tracking.
+"""
+
+from qdrant_client.http.models import Filter, FieldCondition, MatchValue, SearchParams
 from qdrant_client.http import models as rest
 import json
 from dotenv import load_dotenv
@@ -13,6 +38,7 @@ from urllib.parse import quote
 
 
 def underscorize(s: str) -> str:
+    """Replace whitespace runs with underscores (used for normalising payload keys)."""
     return re.sub(r'\s+', '_', s.strip())
 
 
@@ -109,8 +135,28 @@ def _extract_after_fence(response_text: str, fence_name: str):
 
     return None
 
- #Gets data from vector db that was just uploaded for ChatGPT
-def get_relevant_chunks(collection_Name, q_client,  filterid1, company_id, message, openAI, claude, oldData, supabase_client, claude_model, emailCollection, unit_id = ""):
+def get_relevant_chunks(collection_Name, q_client, filterid1, company_id, message, openAI, claude, oldData, supabase_client, claude_model, emailCollection, unit_id = ""):
+    """Run the full RAG pipeline for a tenant chat question and return the AI answer with citations.
+
+    Args:
+        collection_Name:  Qdrant collection containing lease chunks.
+        q_client:         QdrantClient instance.
+        filterid1:        The tenant_id to filter Qdrant results by.
+        company_id:       The company_id to filter Qdrant results by.
+        message:          The raw user question.
+        openAI:           OpenAI client for embeddings.
+        claude:           Anthropic client for LLM calls.
+        oldData:          Previous chat messages for conversation context.
+        supabase_client:  Supabase client for signed URL generation and company lookup.
+        claude_model:     Claude model identifier string.
+        emailCollection:  Qdrant collection containing email chunks.
+        unit_id:          Optional unit_id filter; None skips the unit filter.
+
+    Returns:
+        (final_message, prompt_tokens, prompt_cost, completion_tokens, completion_cost,
+         json_data, email_data) where json_data is a list of deduplicated source citation
+         dicts and email_data is a list of referenced email source dicts.
+    """
     print("get_relevant_chunks")
     now = datetime.now()
     prompt_tokens = 0

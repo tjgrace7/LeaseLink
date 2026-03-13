@@ -1,17 +1,39 @@
+"""
+RAG-based help chat for the LeaseLink documentation.
+
+This module answers user questions about how to use the LeaseLink application by
+performing a two-step pipeline:
+
+  1. rephrase_question: Uses Claude to rewrite the user's question into a
+     semantically precise Qdrant search query.  Claude can also request more than
+     the default 3 chunks if the question is broad (signalled via a JSON fence block).
+
+  2. search_qdrant: Embeds the rephrased query with text-embedding-3-small and
+     searches the "Source-Docs" Qdrant collection for the most relevant documentation
+     chunks.
+
+  3. generate_answer: Feeds the retrieved chunks and conversation history to Claude,
+     which produces a plain-text answer and extracts any relevant documentation URLs
+     from a JSON fence block in the response.
+
+The public entry point is help_chat(), which chains these steps and returns the
+answer, source links, and token cost breakdowns.
+"""
+
 import os
 from qdrant_client import QdrantClient
 from anthropic import Anthropic
 from openai import OpenAI
 from dotenv import load_dotenv
 import tiktoken
-import re  
-from web_api.Qdrant_ChatGPT import _extract_after_fence 
+import re
+from web_api.Qdrant_ChatGPT import _extract_after_fence
 
 load_dotenv()
 
 CLAUDE_API_KEY = os.getenv("Claude_API_KEY")
 
-claude  = Anthropic(api_key=CLAUDE_API_KEY)
+claude = Anthropic(api_key=CLAUDE_API_KEY)
 
 OPENAI_API_KEY = os.getenv("OPEN_AI_PROJECT_KEY")
 
@@ -20,7 +42,8 @@ OpenAIclient = OpenAI(api_key=OPENAI_API_KEY)
 Qdrant_url = os.getenv("QDRANT_URL")
 qdrant_key = os.getenv("QDRANT_API_KEY")
 
-
+# Qdrant client configured with gRPC for lower latency and keepalive settings to
+# maintain the connection under long idle periods.
 client = QdrantClient(
     url=Qdrant_url,
     api_key=qdrant_key,
@@ -33,7 +56,13 @@ client = QdrantClient(
     },
 )
 
+
 def rephrase_question(message, claude_model):
+        """Rewrite the user's question as a search query optimised for Qdrant semantic search.
+
+        Claude also outputs an optional JSON block requesting a higher top_k when the
+        question is broad.  Returns (rephrased_query, prompt_tokens, completion_tokens, top_k).
+        """
         message_summary = claude.messages.create(
         model=claude_model,
         system=(f"""
@@ -69,10 +98,16 @@ You are a helpful assistant designed to rephrase a users question to search a qd
         json_data = _extract_after_fence(message_summary.content[0].text, "json")
         top_k = json_data.get("total_chunks", 3) if json_data else 3
 
+        print("Top K for Qdrant Search:", top_k)
+
 
         return answer, prompt_tokens, completion_tokens, top_k
 
 def search_qdrant(query, top_k=3):
+    """Embed query with text-embedding-3-small and retrieve top_k chunks from Source-Docs.
+
+    Returns (points, embedding_token_count).
+    """
     message_vector = OpenAIclient.embeddings.create(
             input=query,
             model="text-embedding-3-small"
@@ -91,6 +126,12 @@ def search_qdrant(query, top_k=3):
     return search_result.points, embedding_token_count
 
 def generate_answer(search_results, user_message, claude_model, old_messages):
+    """Generate a plain-text answer using retrieved documentation chunks and conversation history.
+
+    Constructs a system prompt containing the source-doc context, calls Claude, strips
+    the JSON fence block from the response, and extracts any source URLs from it.
+    Returns (answer, links, prompt_tokens, completion_tokens).
+    """
     print ("Search Results", search_results)
     context = "\n\n".join([f"Source Doc: {result.payload.get('data', '')}, url: {result.payload.get('url', '')}"
         for result in search_results])
@@ -140,6 +181,12 @@ url: 'https://leaselink-docs.onrender.com/docs/Lease-Link-Pages/Dashboard'
     return answer, links, prompt_tokens, completion_tokens
 
 def help_chat(user_message, old_messages, claude_model = "claude-sonnet-4-20250514"):
+    """Entry point for the help chat pipeline.
+
+    Rephrases the question, searches Qdrant for relevant docs, generates an answer
+    with Claude, then aggregates token counts and calculates prompt/completion costs.
+    Returns (answer, links, prompt_cost, completion_cost).
+    """
     rephrased_query, prompt_tokens, completion_tokens, top_k = rephrase_question(user_message, claude_model)
     search_results, embedding_token_count = search_qdrant(rephrased_query)
 

@@ -1,3 +1,34 @@
+"""
+LeaseLink FastAPI server — entry point for all API routes.
+
+This module bootstraps the application and wires together all subsystems:
+
+  - CORS middleware configured for the production domain and local development.
+  - In-memory job_status dict and a thread-safe Queue for lease upload jobs.
+  - A pool of MAX_WORKERS daemon threads (job_worker) that consume from the queue,
+    call upload_lease_manager.load_pdf, and auto-refill the queue up to BACKLOG_TARGET
+    jobs from Supabase when they finish.
+  - JWT authentication against Supabase using the HS256 SUPABASE_JWT secret.
+  - HMAC-SHA256 signature verification for internal Edge Function callbacks.
+
+Routes:
+  GET  /                              Health check (plain text "ok").
+  GET  /health                        Health check (JSON).
+  GET  /job-status/{job_id}           Returns the in-memory job_status dict for a job.
+  POST /internal/cron/tick            Cron endpoint — claims pending jobs from Supabase
+                                      and fills the worker queue.
+  POST /firstLease                    Synchronous first-lease upload (bypasses queue).
+  POST /refresh_tenant                Re-runs field extraction for an existing tenant.
+  POST /entity_questions              Tenant or property chat question (async, threaded).
+  POST /help                          Help documentation chat (async, threaded).
+  GET  /api/integrations/email/start  Starts OAuth flow for Gmail or Outlook.
+  GET  /api/gmail/oauth/callback      OAuth callback for Google.
+  GET  /api/outlook/oauth/callback    OAuth callback for Microsoft.
+  POST /api/email/resync              Re-syncs email for an existing integration.
+  POST /api/email/new_contact         Syncs emails for a newly added tenant contact.
+  POST /api/integrations/email/disconnect  Removes an email integration.
+"""
+
 # ---------- put these caps at the VERY TOP (before heavy imports) ----------
 print("BOOT 1: module import Start", flush=True)
 import os, urllib.parse, secrets, httpx, time
@@ -101,6 +132,11 @@ job_queue = Queue()
 
 # --------------------------- Helpers ----------------------------------
 def verify_supabase_jwt(token: str):
+    """Decode and verify a Supabase-issued JWT using the shared HS256 secret.
+
+    Raises jwt.exceptions.* on invalid/expired tokens.  Returns the decoded payload
+    dict (which includes 'sub' = auth_id) on success.
+    """
     payload = jwt.decode(
         token,
         key=SUPABASE_JWT,
@@ -111,6 +147,11 @@ def verify_supabase_jwt(token: str):
     return payload
 
 def verify_signature(body: bytes, signature: str, timestamp: str) -> bool:
+    """Verify an HMAC-SHA256 signature produced by the Edge Function shared secret.
+
+    The message is constructed as: timestamp_bytes + b"." + body_bytes.
+    Uses constant-time comparison (hmac.compare_digest) to prevent timing attacks.
+    """
     # optional: reject very old timestamps to prevent replay
     # (e.g., if abs(now - timestamp) > 5 minutes: return False)
 
@@ -207,7 +248,12 @@ def enqueue_next_pending_job(limit: int = JOB_CLAIM_BATCH) -> int:
 
 
 def export_lease(job_id, lease_request, group_id, first_lease=False):
-    
+    """Thin wrapper around upload_lease_manager.load_pdf() that manages job_status bookkeeping.
+
+    Sets the job status to 'in_progress', delegates to load_pdf with all required
+    parameters, and calls Clear_Uploads on any exception before re-raising.
+    When first_lease=True returns a success dict (used by the /firstLease route).
+    """
     #Thin wrapper that calls upload_lease_manager.load_pdf().
     #Internal page work remains parallelized within your worker_service.
     
@@ -250,6 +296,17 @@ def export_lease(job_id, lease_request, group_id, first_lease=False):
 
 
 def job_worker():
+    """Long-running worker thread that consumes jobs from job_queue and processes them.
+
+    Each iteration:
+      1. Blocks on job_queue.get() until a job payload is available.
+      2. Calls export_lease to run the full upload pipeline.
+      3. On success, ensures job_status is set to 'success' if not already terminal.
+      4. On failure, sets job_status to 'error' and calls Clear_Uploads for cleanup.
+      5. In the finally block, stamps elapsed_seconds and finished_at, persists the
+         final status to Upload_Job_Status, marks the task done, and auto-refills
+         the queue up to BACKLOG_TARGET pending jobs from Supabase.
+    """
     while True:
         item = job_queue.get()
         try:
@@ -329,12 +386,14 @@ for _ in range(MAX_WORKERS):
 
 # ---------------------- Global exception/signal hooks -----------------
 def handle_exception(exc_type, exc_value, exc_traceback):
+    """Custom sys.excepthook that logs unhandled exceptions without swallowing KeyboardInterrupt."""
     if issubclass(exc_type, KeyboardInterrupt):
         return
     print("Unhandled Exception:", "".join(traceback.format_exception(exc_type, exc_value, exc_traceback)))
 sys.excepthook = handle_exception
 
 def signal_handler(sig, frame):
+    """Gracefully handle SIGINT and SIGTERM by exiting cleanly."""
     print(f"Received Signal: {sig}")
     sys.exit(0)
 signal.signal(signal.SIGINT, signal_handler)
@@ -767,6 +826,12 @@ async def delete_email_integration(request: Request, authorization: Optional[str
 
 
 def handle_entity_question(message_request, supabase_client, qdrant_client, OpenAIclient, collectionName):
+    """Thread target for processing a tenant or property chat question.
+
+    Dispatches to Qdrant_ChatGPT.get_relevant_chunks for tenant questions or
+    property_chat.property_chat_request for property questions, then persists the
+    user message and assistant response to the entity_questions table.
+    """
     try:
         auth_id = message_request.get("auth_id")
         entity_type = message_request.get("entity_type")
@@ -897,6 +962,12 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
         print("Error in threaded message handler:", e)
 
 def handle_help_chat(message_request):
+    """Thread target for processing a help documentation chat question.
+
+    Fetches the session's previous messages, calls help_chat.help_chat for the RAG
+    answer, then persists both the user message and the assistant response (with source
+    links) to the Help_Chats table.
+    """
     try:
         auth_id = message_request.get("auth_id")
         message = message_request.get("message")

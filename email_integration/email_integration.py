@@ -1,3 +1,29 @@
+"""
+OAuth email integration for Gmail (Google) and Microsoft Outlook.
+
+This module implements the full lifecycle of connecting and maintaining a user's
+email account so that tenant-related emails can be embedded into Qdrant and
+surfaced inside the LeaseLink chat interface.
+
+Key responsibilities:
+  - OAuth callback handling: validates the JWT state, exchanges the authorization
+    code for access/refresh tokens, identifies the mailbox owner, and persists
+    encrypted tokens to the Access_Tokens table.
+  - Token refresh: transparently refreshes expired access tokens (with a 60-second
+    clock-skew buffer) and rotates refresh tokens when the provider returns new ones.
+  - Email syncing (SyncMail): iterates over all Tenant_Contact records for a user,
+    fetches messages sent by each contact address from the provider's API (Graph for
+    Microsoft, Gmail API for Google), strips HTML to plain text, embeds the body with
+    text-embedding-3-large, and upserts each message as a Qdrant point in the
+    email_chunks_v1 collection.
+  - Duplicate detection: checks Qdrant before uploading so the same message is never
+    embedded twice.
+  - Integration disconnect (remove_integration_tokens): deletes tokens from Supabase
+    and optionally purges all Qdrant points for that user+provider.
+  - Sync notification: sends a Resend HTML email to the user after a successful sync
+    listing the tenant contacts whose emails were processed.
+"""
+
 import time, os, httpx
 from fastapi import HTTPException, Request, BackgroundTasks
 import asyncio
@@ -21,6 +47,9 @@ from qdrant_client.models import Filter, MatchValue, FieldCondition, models
 import resend
 import traceback
 from typing import AsyncIterator
+
+
+# --- Provider constants ---
 
 TENANT = os.getenv("MS_TENANT", "common")
 
@@ -53,6 +82,7 @@ Resend_key = os.getenv("RESEND_SECRET_KEY")
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://leaselink.ai")
 
 async def get_internal_user_id(user_id):
+    """Resolve the internal User_Data.user_id (UUID) from a Supabase auth_id."""
     print("Get Internal User ID")
     res = supabase.table("User_Data").select("user_id").eq("auth_id", user_id).limit(1).execute()
 
@@ -67,6 +97,11 @@ async def get_internal_user_id(user_id):
         return
     return internal_user_id
 async def supabase_sync(user_id, sync_status, provider):
+    """Update (or insert) a row in Email_Sync_Logs with the latest sync status and timestamp.
+
+    Attempts an update first; if no matching row exists it falls back to an insert so
+    the log is always current regardless of whether the user has synced before.
+    """
     internal_user_id = await get_internal_user_id(user_id)
     now = datetime.now(timezone.utc).isoformat()
     print("Try Updating Sync Log")
@@ -96,6 +131,7 @@ async def supabase_sync(user_id, sync_status, provider):
 
 
 async def previous_subabase_sync(user_id, provider):
+    """Return the last completed sync log row for a user+provider, or None if not synced yet."""
     print("Previous Supabase Sync")
     internal_user_id = await get_internal_user_id(user_id)
 
@@ -108,6 +144,12 @@ async def previous_subabase_sync(user_id, provider):
     
 
 def save_ms_tokens_for_user(*, app_user_id: str, provider_account_id: str, access_token: str, refresh_token: str, expires_in: str, provider: str):
+    """Encrypt and persist OAuth tokens to the Access_Tokens table.
+
+    Upserts on provider_account_id so that re-connecting the same mailbox updates the
+    existing row rather than creating duplicates.  Both access and refresh tokens are
+    AES-256-GCM encrypted before storage.
+    """
     print("Save MS Tokens for User")
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=expires_in)
     expires_at_iso = expires_at.isoformat()
@@ -165,6 +207,12 @@ async def exchange_code_for_tokens(code: str, provider: str):
         return data
     
 async def fetchMessages(user_id, provider, contact, folder: Optional[str] = None, previous_sync: Optional[datetime] = None):
+    """Fetch and embed all emails from a single tenant contact for the given provider.
+
+    Iterates over messages from the provider API filtered by the contact's email address
+    and the previous_sync cutoff date.  Skips messages already present in Qdrant.
+    Delegates the actual embedding and Qdrant upsert to handle_message_upload.
+    """
     print("Start Fetch Messages")
     email = contact["email"] if isinstance(contact, dict) else contact.email
     company_id = contact["company_id"] if isinstance(contact, dict) else contact.company_id
@@ -203,6 +251,16 @@ async def fetchMessages(user_id, provider, contact, folder: Optional[str] = None
 
 
 async def SyncMail(user_id, provider, new_contact: bool = False, contacts: list = []):
+    """Orchestrate a full email sync for a user across all (or specified) tenant contacts.
+
+    When new_contact=False this is a full re-sync: it reads the last successful sync
+    timestamp from Email_Sync_Logs and only fetches messages received after that point.
+    When new_contact=True (triggered by a new contact being added) it syncs only the
+    provided contacts list starting from the Unix epoch.
+
+    On completion updates the sync log to 'complete' and sends a notification email.
+    On error updates the sync log to 'error'.
+    """
     print("Start Sync Mail")
     print(contacts)
     try:
@@ -248,6 +306,11 @@ async def SyncMail(user_id, provider, new_contact: bool = False, contacts: list 
         await supabase_sync(user_id, "error", provider)
 
 def sync_notification(user_id, contacts):
+    """Send an HTML email via Resend notifying the user that their email sync completed.
+
+    Looks up the user's email and display name from Supabase auth, then sends a
+    branded confirmation listing every tenant contact whose emails were processed.
+    """
     print("Send Sync Notification")
     admin = supabase.auth.admin
 
@@ -343,6 +406,12 @@ def sync_notification(user_id, contacts):
 
 
 async def handle_message_upload(contact, message, content_type, content_html, message_id, provider, user_id):
+    """Normalise a raw provider message and pass it to UploadMail for embedding.
+
+    Extracts sender/recipient addresses, subject, timestamps, thread ID, and other
+    metadata from the provider-specific message dict, strips HTML to plain text,
+    resolves the tenant_id via Tenant_Contact, and calls UploadMail.
+    """
     print("Handle Message Upload")
     clean_text = html_to_text_microsoft(content_type, content_html)
     print("Contact:", contact)
@@ -447,7 +516,7 @@ async def handle_message_upload(contact, message, content_type, content_html, me
 
 
 
-async def UploadMail    (
+async def UploadMail(
     tenant_id: Optional[str],
     company_id: Optional[str],
     contact_id: Optional[str],
@@ -471,7 +540,12 @@ async def UploadMail    (
     user_id = None,
     collection: str = COLL,
     ) -> float:
+    """Embed the plain-text email body and upsert it as a Qdrant point.
 
+    Creates an OpenAI text-embedding-3-large vector for the email body, constructs a
+    PointStruct with the full message metadata payload, ensures the target collection
+    exists, and upserts the point.  Returns the embedding cost in USD.
+    """
     print("Upload Mail to Qdrant")
     text = (body or "").strip()
     if not text:
@@ -529,6 +603,7 @@ async def UploadMail    (
 
 
 async def getContacts(user_id):
+    """Return all tenant contacts associated with the given auth user via Supabase RPC."""
     print("Get Contacts for User")
     resp = supabase.rpc('get_user_contacts', {'p_auth_id': user_id}).execute()
     if getattr(resp, 'error', None):
@@ -538,6 +613,13 @@ async def getContacts(user_id):
 
 
 async def integration_callback(request: Request, provider: str):
+    """Handle the OAuth2 redirect callback for both Google and Microsoft.
+
+    Validates the JWT state parameter, exchanges the authorization code for tokens,
+    identifies the mailbox owner via the provider's /me endpoint, saves the encrypted
+    tokens to Supabase, then fires off an async SyncMail task before redirecting the
+    user back to the integrations settings page.
+    """
     print("Integration Callback Triggered")
     qp=request.query_params
     error = qp.get("error")
@@ -630,11 +712,14 @@ async def integration_callback(request: Request, provider: str):
 
 
 async def refresh_access_token(user_id: str, provider: str) -> dict:
+    """Load the user's stored tokens, refresh if expired, save the rotated tokens, and return them.
+
+    Applies a 60-second clock-skew buffer (EXP_SKEW) when deciding whether to refresh.
+    If still valid, returns the decrypted access token immediately.  If expired, posts
+    to the provider's token endpoint, saves the new access/refresh tokens (encrypted),
+    and returns the fresh access token along with the new expiry and provider account ID.
+    """
     print("refresh access token")
-    """
-    Load user's tokens, refresh if expired (with skew), save rotated refresh_token,
-    and return a dict with access_token, expires_at (UTC ISO), scope, provider_account_id.
-    """
     # 1) Load current tokens row
     # Supabase-py v2 pattern:
     try:
@@ -758,8 +843,10 @@ async def refresh_access_token(user_id: str, provider: str) -> dict:
         print("Error in refresh_access_token:", e)
         raise
 
-#Google Specific Functions
+# --- Google / Gmail specific functions ---
+
 def gmail_search_query(sender_email: str, received_after_utc: Optional[datetime]) -> str:
+    """Build a Gmail search query string filtered by sender and optional after-date."""
 
     q = [f"from:{sender_email}"]
     print(received_after_utc)
@@ -776,6 +863,7 @@ def gmail_search_query(sender_email: str, received_after_utc: Optional[datetime]
     return " ".join(q)
 
 async def gmail_client(user_id: str) -> httpx.AsyncClient:
+    """Return an authenticated async HTTP client pre-configured for the Gmail API base URL."""
     tokens = await refresh_access_token(user_id, 'google')
     headers = {"Authorization": f"Bearer {tokens['access_token']}"}
     return httpx.AsyncClient(base_url=GMAIL_BASE, headers=headers, timeout=30)
@@ -823,6 +911,7 @@ def gmail_find_html_or_text(payload: Dict[str, Any]) -> Tuple[str, str]:
     return ("html", "")
 
 def gmail_normalize_list_item(msg_full: Dict[str, Any], folder: Optional[str] = None) -> Dict[str, Any]:
+    """Convert a raw Gmail message dict into the provider-agnostic shape used by handle_message_upload."""
     print("Gmail Normalize List Item")
     payload = msg_full.get("payload", {}) or {}
     headers = payload.get("headers", []) or []
@@ -897,6 +986,12 @@ async def fetch_messages_for_sender_google(
     top: int = PAGE_SIZE,
     folder: Optional[str] = None,
 ) -> AsyncIterator[Dict[str, Any]]:
+    """Async generator that yields Gmail messages sent by a specific email address.
+
+    Paginates through the Gmail messages.list API using nextPageToken, fetches
+    message metadata for each message ID, and yields normalised message dicts.
+    Handles 429 rate-limit responses with Retry-After back-off.
+    """
     print("Fetch Messages for Sender Google")
     try:
         q = gmail_search_query(sender_email, received_after_utc)
@@ -988,6 +1083,10 @@ async def fetch_message_body_html_google(
         user_id: str,
         message_id: str,
 ) -> Tuple[str, str, Dict[str, Any]]:
+    """Fetch the full message body (HTML or plain text) for a Gmail message by ID.
+
+    Returns a tuple of (content_type, content_html, normalised_envelope_dict).
+    """
     print("Fetch Message Body HTML Google")
     async with await gmail_client(user_id) as client:
         r = await client.get(f"/users/me/messages/{message_id}", params={"format": "full"})
@@ -1002,9 +1101,10 @@ async def fetch_message_body_html_google(
         print("Message content fetched", content)
         return content_type, content, env
 
-#Microsoft Specific Functions
+# --- Microsoft / Graph API specific functions ---
 
 async def _graph_client_microsoft(user_id: str) -> httpx.AsyncClient:
+    """Return an authenticated async HTTP client pre-configured for the Microsoft Graph API base URL."""
     print("Graph Client Microsoft")
     tokens = await refresh_access_token(user_id, 'microsoft')
     headers = {"Authorization": f"bearer {tokens['access_token']}"}
@@ -1016,6 +1116,13 @@ async def fetch_messages_for_sender_microsoft(
     top: int = PAGE_SIZE,
     folder: str = "Inbox",
 ) -> Iterable[Dict[str, Any]]:
+    """Async generator that yields Outlook messages sent by a specific email address via Graph API.
+
+    Tries strict OData $filter + $orderby first (more efficient).  Falls back to
+    $search (which does not support $orderby) if the filter returns a 4xx error,
+    then sorts results locally.  Paginates using @odata.nextLink.
+    Handles 429 rate-limit responses with Retry-After back-off.
+    """
     print("Fetch Messages for Sender Microsoft")
     fields = "id,subject,from,sender,toRecipients,receivedDateTime,hasAttachments,bodyPreview,parentFolderId,internetMessageId"
     base_headers = {"ConsistencyLevel": "eventual"}  # needed for search & filter+orderby combos
@@ -1097,6 +1204,7 @@ async def fetch_messages_for_sender_microsoft(
 
 
 async def fetch_message_body_html_microsoft(user_id: str, message_id: str) -> Tuple[str, str]:
+    """Fetch the full message body (HTML or plain) and metadata for an Outlook message by ID."""
     print("Fetch Message Body HTML Microsoft")
     async with await _graph_client_microsoft(user_id) as client:
         r = await client.get(
@@ -1112,6 +1220,12 @@ async def fetch_message_body_html_microsoft(user_id: str, message_id: str) -> Tu
         return content_type, content, m
 
 async def remove_integration_tokens(user_id: str, provider: str, delete_qdrant):
+    """Disconnect an email integration by deleting its stored tokens.
+
+    Removes the Access_Tokens row for this user+provider, updates the sync log to
+    'disconnected', and optionally deletes all Qdrant email_chunks_v1 points that
+    belong to this user+provider when delete_qdrant=True.
+    """
     print("Remove Integration Tokens")
     resp = supabase.table("Access_Tokens").delete().eq("user_auth_id", user_id).eq("provider", provider).execute()
     
@@ -1154,6 +1268,10 @@ async def remove_integration_tokens(user_id: str, provider: str, delete_qdrant):
             print("Error deleting Qdrant collection:", e)    
 
 def html_to_text_microsoft(content_type: str, body: str) -> str:
+    """Strip HTML tags from an email body and return collapsed plain text.
+
+    Uses BeautifulSoup for HTML content; returns the raw body as-is for plain text.
+    """
     print("HTML to Text Microsoft")
     if content_type.lower() == "html":
         # Basic sanitize: strip tags, collapse whitespace
@@ -1164,8 +1282,14 @@ def html_to_text_microsoft(content_type: str, body: str) -> str:
     return (body or "").strip()
 
 
-#Qdrant Search
+# --- Qdrant deduplication ---
+
 def qdrant_email_exists(unique_message_id, company_id) -> bool:
+    """Check whether an email with the given message_id already exists in Qdrant.
+
+    Scrolls the email_chunks_v1 collection filtering by message_id and company_id.
+    Returns True if at least one matching point is found, preventing duplicate uploads.
+    """
     print("Qdrant Email Exists Check")
     res = qdrant_client.scroll(
         collection_name="email_chunks_v1",

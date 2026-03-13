@@ -1,4 +1,26 @@
-from qdrant_client.http.models import  Filter, FieldCondition, MatchValue, MatchAny
+"""
+Property-level chat — answers questions across all tenants in a property in parallel.
+
+This module powers the "property" entity_type branch of the entity_questions endpoint.
+Rather than querying a single tenant's lease, it:
+
+  1. Fetches all tenants for the property from Property_Tenant and validates the
+     company_id matches.
+  2. Rephrases the user's question with Claude (rephrase_question), which also
+     determines whether a property-wide summary is needed (needs_overview flag).
+  3. Embeds the rephrased question with text-embedding-3-large.
+  4. Runs per-tenant AI queries in parallel (ThreadPoolExecutor, max 5 workers) via
+     run_ai_for_tenant → tenant_ai_response.
+  5. If needs_overview is True, generates a final property-wide summary by feeding all
+     per-tenant short answers back through Claude (summary_response).
+  6. Returns the list of per-tenant answer dicts (plus optional summary) together with
+     aggregated token/cost statistics.
+
+Helper functions sort_json and normalize_sources handle parsing and deduplicating the
+JSON citation blocks that Claude returns inside fenced code blocks.
+"""
+
+from qdrant_client.http.models import Filter, FieldCondition, MatchValue, MatchAny
 from qdrant_client.http import models as rest
 import json
 from dotenv import load_dotenv
@@ -8,7 +30,7 @@ import tiktoken
 import common.Supabase_api as Supabase_api
 from web_api import Qdrant_ChatGPT
 from worker_service.final_check import lease_check
-import  re
+import re
 from qdrant_client import QdrantClient
 from openai import OpenAI
 from anthropic import Anthropic
@@ -32,6 +54,11 @@ from datetime import datetime
 
 
 def get_propertyTenants(property_id, company_id):
+    """Return all tenant rows for a property, or None if the company_id does not match.
+
+    Queries Property_Tenant to get tenant IDs, then fetches the full tenant rows and
+    validates that all tenants belong to the requesting company.
+    """
     print("Get Property Tenants")
     pt = supabase.table("Property_Tenant").select("*").eq("property_id", property_id).execute()
     tenant_ids = [row["tenant_id"] for row in (pt.data or []) if row.get("tenant_id")]
@@ -48,6 +75,7 @@ def get_propertyTenants(property_id, company_id):
     return tenants
 
 def normalize_tenant(tenant):
+    """Ensure tenant is returned as a plain dict regardless of whether it came as a tuple."""
     if isinstance(tenant, tuple):
         if len(tenant) >= 2 and isinstance(tenant[1], dict):
             tenant = tenant[1]
@@ -58,6 +86,7 @@ def normalize_tenant(tenant):
     return tenant
 
 def build_tenant_job_payload(tenant):
+    """Build the job dict passed to run_ai_for_tenant, including summed unit square footage."""
     tenant_id = tenant.get("tenant_id")
     if not tenant_id:
         return None
@@ -119,7 +148,13 @@ def run_ai_for_tenant(job, collection_name, message_vector, ai_message, claude_m
 
 
     return row, (total_prompt_tokens or 0), (total_completion_tokens or 0)
-def get_supabase_data(tenants,  claude_model, ai_message, collection_name, message_vector):
+def get_supabase_data(tenants, claude_model, ai_message, collection_name, message_vector):
+    """Fan out per-tenant AI queries in parallel and aggregate the results.
+
+    Builds a job payload for each tenant, submits them to a ThreadPoolExecutor, and
+    collects the per-tenant answer rows together with aggregated token counts.
+    Returns (data, total_prompt_tokens, total_completion_tokens).
+    """
     print("Get Supabase Data")
 
 
@@ -167,6 +202,12 @@ def get_supabase_data(tenants,  claude_model, ai_message, collection_name, messa
     return data, total_prompt_tokens, total_completion_tokens
 
 def tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_id, top_k=50):
+    """Search Qdrant for lease chunks relevant to the query vector for a single tenant.
+
+    Filters by tenant_id and company_id; optionally restricts to a specific set of
+    lease_ids.  Applies a score-cutoff filter (60% of the best score) to drop low-
+    relevance results.  Returns a formatted context string or None if no results.
+    """
     if(lease_ids != []):
         resp = qdrant.query_points(
             collection_name=collection_name,
@@ -266,6 +307,12 @@ def normalize_sources(raw_sources):
 
     return normalized
 def tenant_ai_response(tenant_id, company_id, collection_name, message_vector, ai_message, claude_model, lease_ids):
+    """Call Claude with retrieved lease context for a single tenant and return the structured answer.
+
+    Retrieves context via tenant_query, builds a detailed system prompt, calls Claude,
+    strips JSON fences from the text response, and parses the JSON citation block.
+    Returns (short_answer, long_answer, source_docs, prompt_tokens, completion_tokens).
+    """
     context = tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_id)
     now = datetime.now()
     system_prompt = f"""You are a helpful assistant answering questions about lease documents.
@@ -382,6 +429,13 @@ The json wants a short and long answer. This is where you will answer the questi
 
 
 def sort_json(json_data):
+    """Extract short_answer, long_answer, and a deduplicated/enriched source list from the AI response JSON.
+
+    Pulls the first object's short_answer and long_answer, then iterates all source
+    objects, generates signed PDF URLs via Supabase, and merges duplicate (source_doc,
+    pageNumber) pairs by concatenating their highlight_text.
+    Returns (source_list, short_answer, long_answer).
+    """
     print("json_data type:", type(json_data))
     try:
         print(json.dumps(json_data, indent=2))
@@ -457,6 +511,14 @@ def sort_json(json_data):
 
 
 def rephrase_question(question: str, claude_model: str) -> str:
+        """Rewrite the property-level question as a Qdrant-optimised search query.
+
+        Claude also determines whether the question requires a property-wide overview
+        (needs_overview flag returned in a JSON fence block).  The rephrased text is
+        embedded with text-embedding-3-large to produce the search vector.
+        Returns (ai_message, message_vector, prompt_tokens, completion_tokens,
+                 embedding_token_count, needs_overview).
+        """
         print("Rephrase Question")
         now = datetime.now()
         message_summary = claude.messages.create(
@@ -530,6 +592,12 @@ RULES:
         return ai_message, message_vector, prompt_tokens, completion_tokens, embedding_token_count, needs_review or False
 
 def summary_response(short_messages, claude_model, question):
+    """Generate a single consolidated summary answer across all tenants for a property-overview question.
+
+    Takes the per-tenant short answers as input context, calls Claude to produce a
+    unified short + long answer with merged source citations, and returns
+    (short_answer, long_answer, json_data, completion_tokens, prompt_tokens).
+    """
     now = datetime.now()
     system_prompt = f"""Your job is to summarize all the tenantdata from {short_messages}. It contains the source documents that were used to find the data. Combine each individual tenant Answer into 1 conscise summary.
                 TASK:
@@ -625,7 +693,14 @@ The json wants a short and long answer. This is where you will answer the questi
     return short_answer, long_answer, json_data, completion_tokens, prompt_tokens
             
 
-def property_chat_request(collection_name, property_id,message, oldData, claude_model, company_id):
+def property_chat_request(collection_name, property_id, message, oldData, claude_model, company_id):
+    """Entry point for a property-level chat request.
+
+    Orchestrates the full flow: fetch tenants, rephrase question, run parallel
+    per-tenant queries, optionally generate a property-wide summary, then compute
+    and return costs.  Returns (tenant_data, prompt_tokens, prompt_cost,
+    completion_tokens, completion_cost).
+    """
     print("Company Id", company_id)
 
     all_prompt_tokens = 0

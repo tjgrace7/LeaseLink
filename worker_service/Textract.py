@@ -1,3 +1,38 @@
+"""
+AWS Textract OCR pipeline — converts lease PDFs to embedded Qdrant vector chunks.
+
+This module is the core document ingestion engine.  runTextract() is the main entry
+point and performs the full pipeline:
+
+  1. Cache check: looks for a previously stored Textract JSON output in Supabase
+     Storage (bucket: lease-docs, path: <folder>/<lease_id>_textract.json).
+     If found, the OCR step is skipped and the cached blocks are used directly.
+
+  2. OCR: uploads the PDF to S3, starts an async Textract DocumentAnalysis job
+     (TABLES + FORMS feature types), polls for completion, paginates through all
+     result blocks, and caches the raw block JSON back to Supabase Storage.
+
+  3. Page reconstruction (build_pages_structured):
+     - Groups LINE and TABLE blocks by page number.
+     - Sorts lines by their bounding-box top/left coordinates.
+     - Filters out LINE blocks that overlap table regions (to avoid duplicate text).
+     - Glues orphan headings to the next content line (glue_headings).
+     - Joins label lines that end with ":" to their immediately following value.
+
+  4. Chunking: each page's reconstructed text is split into sections using a regex
+     that matches lease section headings (ARTICLE, SECTION, numbered clauses, exhibits).
+     Sections longer than MAX_CHARS_PER_CHUNK are further split at word/newline
+     boundaries.  Table text is embedded as its own separate chunk per page.
+
+  5. Embedding and upsert (embed_one_chunk → embed_files.EmbedFiles):
+     Each chunk is embedded immediately and upserted to Qdrant as an individual
+     PointStruct with full metadata payload (tenant, property, unit, page, source_doc,
+     company, lease_id, highlight_id, etc.).
+
+  6. Cost tracking: returns (total_embedding_cost, total_pages) so the caller can
+     persist costs to lease_documents.
+"""
+
 import os, time, json, re, uuid, boto3, botocore
 from typing import List, Dict, Any, Tuple
 from dotenv import load_dotenv, find_dotenv
@@ -7,16 +42,14 @@ from io import BytesIO
 from qdrant_client.models import Distance, VectorParams, PointStruct
 from common.cleanup_utils import Clear_Uploads
 from collections import Counter
-from qdrant_client.http.models import  Filter, FieldCondition, MatchValue, MatchAny
+from qdrant_client.http.models import Filter, FieldCondition, MatchValue, MatchAny
 from common import Supabase_api
-
-
 
 
 supabase = Supabase_api.supabase_client_setup()
 bucket = 'lease-docs'
 
-# your embedding module
+# Embedding module — EmbedFiles creates the OpenAI vector and returns a PointStruct.
 from . import embed_files
 
 load_dotenv(find_dotenv())
@@ -69,6 +102,11 @@ HEADER_RE = re.compile(
 money_label_re = re.compile(r".*:\s*\$\s*$")  # e.g. "CAM_PSF: $" or "CAM_PSF:    $
 
 def is_incomplete_heading(line: str) -> bool:
+    """Return True if the line looks like a label/heading that has no value yet.
+
+    Detects lines ending with a bare colon (label pattern) or a lone "$" sign
+    so they can be glued to the following value line during page reconstruction.
+    """
     line = line.strip()
     if not line:
         return False
@@ -82,6 +120,11 @@ def is_incomplete_heading(line: str) -> bool:
 
 
 def is_heading(line: str) -> bool:
+    """Return True if the line is a document section heading.
+
+    Uses a regex for ARTICLE/SECTION patterns first, then falls back to an
+    uppercase-ratio heuristic (>=85% uppercase letters, <=70 chars).
+    """
     s = line.strip()
     if not s:
         return False
@@ -152,6 +195,11 @@ def glue_headings(lines: List[str]) -> List[str]:
     return out
 
 def chunk_text_by_sections(text: str) -> List[str]:
+    """Split a page's text into logical chunks at lease section boundaries.
+
+    Uses section_regex to detect Article/Section/Exhibit headings as split points.
+    Returns a list of non-empty chunk strings.
+    """
     lines = text.splitlines()
     chunks, current = [], []
     for line in lines:
@@ -172,7 +220,12 @@ def chunk_text_by_sections(text: str) -> List[str]:
     return [c for c in chunks if c.strip()]
 
 def split_long_chunk(c: str, limit: int) -> List[str]:
+    """Split a single chunk into sub-chunks no longer than limit characters.
 
+    Prefers to split at newline or space boundaries that fall in the last 40% of
+    each sub-chunk to avoid cutting mid-word.  Returns [c] unchanged if c fits
+    within the limit or limit is falsy.
+    """
     if not limit or len(c) <= limit:
         return [c]
     parts, start = [], 0
@@ -190,6 +243,7 @@ def split_long_chunk(c: str, limit: int) -> List[str]:
 
 # ----------------------------- CLIENTS --------------------------------
 def s3_client() -> Any:
+    """Return a boto3 S3 client authenticated with the configured AWS credentials."""
     return boto3.client(
         "s3",
         region_name=AWS_REGION,
@@ -198,6 +252,7 @@ def s3_client() -> Any:
     )
 
 def textract_client() -> Any:
+    """Return a boto3 Textract client authenticated with the configured AWS credentials."""
     return boto3.client(
         "textract",
         region_name=AWS_REGION,
@@ -214,6 +269,12 @@ def safe_page_count(pdf_bytes: bytes) -> int | None:
         return 0
 # ----------------------------- TEXTRACT -------------------------------
 def start_analysis_job(pdf_bytes: bytes, filename: str) -> Dict[str, Any]:
+    """Upload a PDF to S3 and start an async Textract DocumentAnalysis job.
+
+    The job is configured with TABLES and FORMS feature types so that table cell
+    text is extracted separately from line text.  Returns a dict containing the
+    Textract job_id, the S3 key, the estimated page count, and mode='async'.
+    """
     tx = textract_client()
 
     total_pages = safe_page_count(pdf_bytes)
@@ -239,6 +300,11 @@ def start_analysis_job(pdf_bytes: bytes, filename: str) -> Dict[str, Any]:
     return {"mode": "async", "job_id": resp["JobId"], "s3_key": key, "pages": total_pages}
 
 def wait_for_analysis_job(job_id: str, poll_seconds: float = 2.0, max_wait_seconds: int = 1800) -> str:
+    """Poll the Textract job until it finishes, using exponential back-off up to 10 seconds.
+
+    Returns the final status string ('SUCCEEDED', 'FAILED', or 'PARTIAL_SUCCESS').
+    Raises TimeoutError if max_wait_seconds is exceeded.
+    """
     tx = textract_client()
     waited, backoff = 0.0, poll_seconds
 
@@ -257,6 +323,11 @@ def wait_for_analysis_job(job_id: str, poll_seconds: float = 2.0, max_wait_secon
             raise TimeoutError(f"Textract job {job_id} did not finish within {max_wait_seconds}s")
 
 def fetch_all_analysis_blocks(job_id: str) -> List[Dict[str, Any]]:
+    """Paginate through all Textract result blocks for a completed DocumentAnalysis job.
+
+    Textract returns results in pages of up to 1000 blocks; this function collects
+    them all into a flat list before returning.
+    """
     tx = textract_client()
     blocks: List[Dict[str, Any]] = []
     next_token = None
@@ -287,12 +358,14 @@ def is_incomplete_heading(line: str) -> bool:
     return False
 
 def sort_lines(lines):
+    """Sort LINE block objects by their bounding-box position: top-to-bottom, then left-to-right."""
     return sorted(
         lines,
         key=lambda x: (round(float(x['bb'].get("Top", 0.0)), 3), float(x['bb'].get("Left", 0.0)))
     )
 
 def overlap(a,b) -> bool:
+    """Return True if two Textract bounding boxes overlap (used to detect lines inside tables)."""
     ax1, ay1 = float(a.get("Left", 0)), float(a.get("Top", 0))
     ax2, ay2 = ax1 + float(a.get("Width", 0)), ay1 + float(a.get("Height", 0))
     bx1, by1 = float(b.get("Left", 0)), float(b.get("Top", 0))
@@ -301,6 +374,11 @@ def overlap(a,b) -> bool:
     return not (ax2 < bx1 or ax1 > bx2 or ay2 < by1 or ay1 > by2)
 
 def filter_lines_outside_table(line_objs, table_blocks):
+    """Remove LINE blocks that spatially overlap any TABLE block on the same page.
+
+    Prevents duplicate text: table cell content is captured by extract_table_text
+    and should not also appear in the main LINE-based text stream.
+    """
     table_bbs = []
     for t in table_blocks:
         bb=(t.get("Geometry", {}) or {}).get("BoundingBox", {}) or {}
@@ -319,6 +397,13 @@ def filter_lines_outside_table(line_objs, table_blocks):
         kept.append(lo)
     return kept
 def build_pages_structured(blocks: List[Dict[str,Any]]) -> List[Dict[str, Any]]:
+    """Reconstruct page text from raw Textract blocks, cleaning up label/value fragmentation.
+
+    Groups LINE and TABLE blocks by page, sorts lines spatially, removes lines that
+    sit inside table regions, glues colon-terminated labels to their values, and
+    then calls glue_headings to attach orphan heading lines to following content.
+    Returns a list of page dicts: {'page': int, 'text': str, 'tables': list}.
+    """
     pages: Dict[int, Dict[str, Any]] = {}
     for b in blocks:
         page = b.get("Page", 1)
@@ -469,11 +554,13 @@ def ensure_collection_exists(collection: str, vector_size: int, qdrant_client) -
         # Add payload indexes here if desired.
 
 def upsert_point(collection: str, point: PointStruct, qdrant_client, page_num) -> None:
+    """Upsert a single PointStruct to the specified Qdrant collection (no-op if point is None)."""
     if point:
         response = qdrant_client.upsert(collection_name=collection, points=[point])
         
 # ----------------------------- EMBED + UPSERT (ONE-AT-A-TIME) ---------
 def _to_vec_list(v) -> List[float]:
+    """Coerce a PointStruct or raw vector value to a plain Python list of floats."""
     if isinstance(v, PointStruct):
         return list(v.vector or [])
     return list(v or [])
@@ -528,6 +615,12 @@ def embed_one_chunk(
        
         return float(embeddingcost or 0.0), point
 def textract_exists(object_path) -> bool:
+    """Check whether a cached Textract JSON output exists in Supabase Storage.
+
+    Downloads the object at object_path from the lease-docs bucket and validates
+    that it contains a list of Textract block dicts.
+    Returns (True, blocks_list) if found and valid, (False, None) otherwise.
+    """
     try:
         raw = supabase.storage.from_(bucket).download(object_path)
         if hasattr(raw, "decode"):

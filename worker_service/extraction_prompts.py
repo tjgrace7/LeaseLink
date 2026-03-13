@@ -1,3 +1,25 @@
+"""
+LLM extraction prompt definitions for every structured lease field.
+
+The `prompts` dictionary maps each Lease_Extractions column name to a configuration
+object with the following keys:
+
+  prompt                      - The instruction text sent to Claude describing exactly
+                                what to extract, how to handle edge cases, and what
+                                output format to use.
+  required_document(s)        - Which document category to prioritise when fetching
+                                Qdrant context: 'Original_Lease', 'Current_Lease',
+                                or 'All'.
+  need_current_time           - Boolean.  True when the extraction requires today's
+                                date to determine which rent period or option is
+                                currently active.
+  minimum_required_confidence - Float (0–1).  Extractions below this threshold are
+                                flagged for manual review in the Lease_Extractions
+                                table.
+
+This module is imported by final_check.py which iterates the prompts dict to run
+one Claude extraction call per column.
+"""
 
 import os
 

@@ -1,3 +1,24 @@
+"""
+Main upload orchestrator for the LeaseLink lease document processing pipeline.
+
+load_pdf() is the single entry point called by the job worker in app.py for each
+queued lease upload job.  It coordinates the following steps in sequence:
+
+  1. Download: pulls the PDF bytes from Supabase Storage using the lease file path.
+  2. OCR + Embedding: delegates to Textract.runTextract() which runs AWS Textract,
+     reconstructs page text, chunks it by section, embeds each chunk with OpenAI,
+     and upserts points to Qdrant.
+  3. Cost tracking: writes the combined Textract + embedding cost back to the
+     lease_documents row.
+  4. Group completion: increments the done_jobs counter on the upload_groups row
+     and calls CheckGroupComplete.  If all jobs in the group are now done, triggers
+     final_check.extract_tenant_data for structured field extraction and
+     NotifyComplete to send the completion email.
+
+On any failure, uploadError() is called to mark the job status as "error" in
+Upload_Job_Status and delegate cleanup to Clear_Uploads.
+"""
+
 from dotenv import load_dotenv
 import json
 import uuid
@@ -9,6 +30,7 @@ import traceback
 
 
 from . import Textract, final_check
+
 
 def load_pdf(
     auth_id: str,
@@ -119,6 +141,11 @@ def load_pdf(
 
 
 def uploadError(e, job_status, supabase_client, job_id, get_pdf, group_id):
+        """Handle a failed upload job: mark the status as error and clean up artifacts.
+
+        Updates the Upload_Job_Status row with the error status, then calls Clear_Uploads
+        to remove any partial Qdrant data and update the upload group error counter.
+        """
         traceback.print_exc()
         print(f"GPT extraction or supabase insert failed: {e}")
         job_status["status"] = "error"

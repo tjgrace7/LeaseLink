@@ -1,7 +1,19 @@
+"""
+OpenAI embedding helper for individual lease text chunks.
+
+EmbedFiles takes a single text chunk and all the metadata needed to identify it
+(tenant, property, unit, page, source document, etc.) and returns a Qdrant
+PointStruct ready for upsert along with the USD embedding cost.
+
+The model used is text-embedding-3-large (3072 dimensions, $0.13 / 1M tokens).
+Cost is calculated from the tiktoken token count of the input text.
+"""
+
 from datetime import datetime, timezone
 from uuid import uuid4
 from qdrant_client.models import PointStruct
 import tiktoken
+
 
 def EmbedFiles(
     client,
@@ -17,6 +29,25 @@ def EmbedFiles(
     company_id,
     lease_id
 ):
+    """Embed a single text chunk and return a populated Qdrant PointStruct plus the embedding cost.
+
+    Args:
+        client:            OpenAI client used to call the embeddings API.
+        chunk:             The raw text string to embed.
+        tenantid:          Tenant UUID for the Qdrant payload filter.
+        propertymanagerid: Auth UUID of the property manager who uploaded the lease.
+        propertyid:        Property UUID.
+        unitid:            Unit UUID.
+        upload_session_id: Session UUID shared across all chunks in one upload.
+        pagenumber:        1-based page number within the source PDF.
+        sourcedocname:     Storage path of the source PDF (used as source_doc in payload).
+        chunkindex:        Zero-based index of this chunk within the page.
+        company_id:        Company UUID for multi-tenant filtering.
+        lease_id:          Lease document UUID.
+
+    Returns:
+        (PointStruct, embedding_cost_usd) on success, or (None, 0.0) on error or empty input.
+    """
     tenantid = tenantid or ""
 
     try:

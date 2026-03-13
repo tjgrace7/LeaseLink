@@ -1,3 +1,36 @@
+"""
+Post-upload lease data extraction pipeline.
+
+After the OCR/embedding pipeline has finished, this module runs a structured
+field-by-field extraction pass against every Lease_Extractions column for a tenant.
+
+Key stages:
+
+  1. lease_check: Classifies each lease document as Past, Present, or Future by
+     querying Qdrant for date context and calling GPT-4.1 (active_lease) to extract
+     effective_date, expiration_date, and document_type.  A compute_status guard
+     ensures the GPT output is consistent with the dates it returned.
+
+  2. extract_tenant_data (main entry point):
+     - Ensures a Lease_Extractions row exists (creating one if needed).
+     - Calls lease_check to sort all lease documents by status and recency.
+     - Iterates every column defined in extraction_prompts.prompts.
+     - For each column, fetches Qdrant context from the appropriate document category
+       (current, past, original, or future leases) via query_description.
+     - Calls review_extraction_clases → Claude to extract or confirm the field value.
+     - Respects is_manual_change flags so user overrides are not overwritten unless
+       the confidence threshold is very high.
+     - Handles CPI rent fields by delegating to CPI.runCPICalculation when flagged.
+     - Upserts the complete Lease_Extractions row and marks the previous row inactive.
+
+  3. Helper utilities:
+     - rent_chunk_score / pass_a_is_valid: score Qdrant chunks for rent-specific relevance.
+     - normalize_text: strip non-ASCII characters from lease text before sending to GPT.
+     - parse_model_payload: robustly parse JSON or Python-literal model responses.
+     - context_get / qdrant_points_to_json: format Qdrant points into LLM context strings.
+     - claude_message: thin wrapper around the Anthropic messages API.
+     - point_to_dict: serialize a Qdrant ScoredPoint for debugging/logging.
+"""
 
 import os
 from openai import OpenAI
@@ -50,6 +83,11 @@ RENT_KWS = [
 PERIOD_KWS = ["commencing", "beginning", "from and after", "through", "during", "for the period", "year", "month"]
 
 def rent_chunk_score(text: str) -> int:
+    """Score a Qdrant chunk for rent-related relevance (higher = more relevant).
+
+    Checks for rent keywords (+3), schedule/exhibit terms (+2), dollar amounts (+2),
+    period keywords or dates (+2), and amendment language (+1).
+    """
     t = text.lower()
     score = 0
     if any(k in t for k in ["base rent", "minimum rent", "fixed rent"]): score += 3
@@ -60,12 +98,20 @@ def rent_chunk_score(text: str) -> int:
     return score
 
 def pass_a_is_valid(chunks):
+    """Return True if the retrieved chunks contain a high-confidence rent section.
+
+    Passes if the top chunk score >= 6, or the sum of the top-3 scores >= 14.
+    """
     scores = [rent_chunk_score(c.payload['text']) for c in chunks]
     return (max(scores, default=0) >= 6) or (sum(sorted(scores, reverse=True)[:3]) >= 14)
 
 
 
 def normalize_text(text: str) -> str:
+    """Strip non-ASCII characters from lease text using NFKD normalisation.
+
+    Prevents encoding errors when feeding OCR'd text into the OpenAI/Anthropic APIs.
+    """
     return unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode("ascii")
 
 def parse_model_payload(text: str) -> Optional[List[Dict]]:
@@ -117,6 +163,11 @@ def parse_model_payload(text: str) -> Optional[List[Dict]]:
     except Exception:
         return None
 def compute_status(today_iso: str, effective_date: str | None, expiration_date: str | None, default_status: str = "Present") -> str:
+    """Determine lease status (Past / Present / Future) from ISO date strings.
+
+    Uses lexicographic ISO date comparison (YYYY-MM-DD strings compare correctly).
+    Falls back to default_status if dates are insufficient to determine status.
+    """
     # today_iso must be "YYYY-MM-DD"
     if expiration_date:
         # ISO date strings compare correctly lexicographically
@@ -132,7 +183,14 @@ def compute_status(today_iso: str, effective_date: str | None, expiration_date: 
             return "Present"
 
     return default_status
-def lease_check(tenant_id, unit_id,collection_name, leases, default = 'Present'):
+def lease_check(tenant_id, unit_id, collection_name, leases, default = 'Present'):
+    """Classify each lease document as Past, Present, or Future and sort by effective date.
+
+    For each lease, fetches Qdrant date context, calls active_lease (GPT-4.1) to
+    extract effective/expiration dates and document_type, then cross-checks the GPT
+    status against compute_status to correct any inconsistencies.  Returns the sorted
+    list of lease dicts (most recent first) plus aggregated token counts.
+    """
     total_prompt_tokens = 0
     total_completion_tokens = 0
     total_embedding_tokens = 0
@@ -184,6 +242,12 @@ def lease_check(tenant_id, unit_id,collection_name, leases, default = 'Present')
 
     return sorted_leases, total_prompt_tokens, total_completion_tokens, total_embedding_tokens
 def active_lease(lease_results, lease_id, default):
+    """Call GPT-4.1 to extract key dates and classify a single lease document's status.
+
+    Builds a detailed system prompt with the Qdrant lease context, rules for date
+    extraction priority, and status validation logic.  Returns the raw JSON response
+    string plus prompt/completion token counts.
+    """
     now = datetime.now()
     lease_context = "\n\n".join([
         f"source_doc = {r.payload.get('source_doc', 'unknown')}, pageNumber = {r.payload.get('pageNumber', 'N/A')})\n, text = {normalize_text(r.payload['text'])}"
@@ -471,7 +535,12 @@ def extract_tenant_data(tenant_id: str, unit_id: str, company_id: str, claude_mo
 
 
 def query_description(tenant_id, unit_id, description, collection_name, top_k, leases):
-    
+    """Embed a field description and search Qdrant for the most relevant lease chunks.
+
+    Filters by tenant_id, unit_id, and a list of lease file paths (source_doc).
+    Applies a 60% score-cutoff filter to discard low-relevance results.
+    Returns (points, embedding_token_count).
+    """
     message_vector = OpenAIClient.embeddings.create(
             input=description,
             model="text-embedding-3-large"
@@ -511,6 +580,7 @@ def query_description(tenant_id, unit_id, description, collection_name, top_k, l
     print("Post Screen Count of Results", len(results))
     return results, embedding_token_count
 def qdrant_points_to_json(points):
+    """Serialize a list of Qdrant ScoredPoints to JSON-friendly dicts for debugging."""
     return [
         {
             "id": p.id,
@@ -520,6 +590,12 @@ def qdrant_points_to_json(points):
         for p in points
     ]
 def context_get(results):
+    """Convert Qdrant query results into a formatted context string for LLM prompts.
+
+    Handles (points, extra) tuples, single points, and None gracefully.
+    Returns a newline-separated string of source_doc, pageNumber, score, and text
+    for each point that has a non-empty text payload.
+    """
     # If results is (points, something), pull out points
     if isinstance(results, tuple) and len(results) >= 1:
         results = results[0]
@@ -821,6 +897,7 @@ Provide ONLY the JSON response with no additional text."""
 
 
 def claude_message(claude_model, system_prompt, user_message, max_tokens = 300):
+    """Send a single-turn message to Claude and return (response_text, prompt_tokens, completion_tokens)."""
     chat_response = claude.messages.create(
         model=claude_model,
         system=(system_prompt),
@@ -841,6 +918,7 @@ def claude_message(claude_model, system_prompt, user_message, max_tokens = 300):
     return response, prompt_tokens, completion_tokens
 
 def point_to_dict(p):
+    """Convert a Qdrant ScoredPoint to a plain dict, handling both Pydantic v1 and v2."""
     if hasattr(p, "model_dump"):          # pydantic v2
         return p.model_dump()
     if hasattr(p, "dict"):               # pydantic v1
