@@ -623,7 +623,7 @@ async def integration_callback(request: Request, provider: str):
     print("Integration Callback Triggered")
     qp=request.query_params
     error = qp.get("error")
-    error_desc= qp.get("error_description").lower()
+    error_desc= (qp.get("error_description") or "").lower()
     if error:
         print("OAuth Error:", error, error_desc)
         if (
