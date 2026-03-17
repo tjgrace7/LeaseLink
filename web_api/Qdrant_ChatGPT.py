@@ -195,6 +195,7 @@ If the user asks about square footage, land size, or area, generate a query that
 - site area
 - parcel size
 - property area
+- For Rent search for the symbol $. While including standard rent terms like "rent", "base rent", "escalation", "monthly rent", "annual rent", "percentage rent", and "prorated rent", you should also include the $ symbol in your search query to help retrieve relevant financial information from the lease documents. This is because rent amounts are often listed with the $ symbol, and including it can improve the relevance of search results related to rent calculations or amounts.
 
 Land size is often expressed as square feet or acres. The answer may come from county property reports or appraisals.
 
@@ -213,6 +214,8 @@ Return a **single, semantically precise** version of the user's question that wi
         prompt_tokens = token_usage.input_tokens
         completion_tokens = token_usage.output_tokens
         input = message_summary.content[0].text
+
+        print("Rephrased Question:", input)
 
         print("Embed Question")
         message_vector = openAI.embeddings.create(

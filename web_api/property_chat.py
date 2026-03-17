@@ -253,7 +253,8 @@ def tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_
         cutoff = best * .6
         results = [p for p in points if p.score >= cutoff]
 
-
+    if tenant_id == "fa0377bd-40a2-4d63-8b37-345f1b7594d3":
+        print("Qdrant Response for Tenant:", tenant_id, "results", len(points))
     if not results:
         print("No Results found for Tenant_ID and Company_Id", tenant_id, company_id)
         return
@@ -263,6 +264,7 @@ def tenant_query(lease_ids, collection_name, message_vector, tenant_id, company_
      f"source_doc = {r.payload.get('source_doc', 'unknown')}, pageNumber = {r.payload.get('pageNumber', 'N/A')})\n{r.payload['text']}"
         for r in results if "text" in r.payload
         ])
+
     return context
 
 
@@ -326,10 +328,11 @@ TASK:
 Use the provided lease document excerpts to answer the user's question concisely and accurately.
 
 RULES:
-1. If excerpts don't contain relevant information, respond with: "No Data Available"
+1. If excerpts don't contain relevant information, respond with: "No Data Available.
 2. Be concise - avoid unnecessary elaboration
 3. Extract tenant_id from context when answering
 4. Prioritize more recent documents when information conflicts
+5. If the question is not answered in the sources. You can provide a couple relavent sections that show why the question wasn't answered.
 
 CALCULATION & ANALYSIS CAPABILITIES:
 You may need to:
@@ -524,33 +527,31 @@ def rephrase_question(question: str, claude_model: str) -> str:
         message_summary = claude.messages.create(
             model=claude_model,
             system=(f"""
-You are preparing a search query for a vector database (Qdrant) containing lease documents.
+You are preparing a search query for a vector database (Qdrant) to help retrieve the most relevant lease documents for answering a property management question.
 
-Your task: Rewrite the user's question to maximize semantic search relevance.
+Your goal is to rewrite or summarize the user's question in a way that improves semantic search relevance.
 
-DOCUMENT CONTEXT:
-- Documents sharing a tenant_id belong to the same lease
-- Types: main_lease, amendment, renewal, addendum
-- Newer documents override older ones when they conflict
-- Current date: {now}
+Important considerations:
 
-QUERY OPTIMIZATION GUIDELINES:
+- Documents with the same tenant_id belong to the same lease context and may include amendments, renewals, or overrides.
+- These documents can conflict. In such cases, **more recent documents should take precedence**. The current date is: {now}
+- Document types include: main_lease, amendment, renewal, addendum, etc.
+- Amendments or renewals may override clauses in the original lease — always prioritize newer documents for accuracy.
+- Only use what's needed from the question to guide the search (avoid restating unrelated fluff).
 
-For property size questions:
-→ Include: square footage, acreage, land area, site dimensions, parcel size
+If the user asks about square footage, land size, or area, generate a query that includes terms like:
+- land size
+- square footage
+- site area
+- parcel size
+- property area
+- For Rent search for the symbol $. While including standard rent terms like "rent", "base rent", "escalation", "monthly rent", "annual rent", "percentage rent", and "prorated rent", you should also include the $ symbol in your search query to help retrieve relevant financial information from the lease documents. This is because rent amounts are often listed with the $ symbol, and including it can improve the relevance of search results related to rent calculations or amounts.
 
-For financial questions:
-→ Include: rent amounts, payment terms, commencement dates, dollar values, financial obligations
+Land size is often expressed as square feet or acres. The answer may come from county property reports or appraisals.
 
-For date-sensitive questions:
-→ Include: effective dates, expiration dates, renewal dates, term length
+Return a **single, semantically precise** version of the user's question that will help match the most relevant document chunks in the vector database.
 
-RULES:
-1. Return ONE semantically precise query
-2. Remove conversational fluff
-3. Preserve key details (tenant names, addresses, specific dates/amounts if mentioned)
-4. Don't add information not in the original question
-5. Determine if this question requires a full property overview. 
+1. Determine if this question requires a full property overview. 
 
 ```json Open Curly Bracket
     needs_overview: True/False
@@ -563,7 +564,7 @@ RULES:
                     'text': question}]}
             ],
             temperature=0.0,
-            max_tokens=10000
+            max_tokens=4000
         )
         token_usage = message_summary.usage
         prompt_tokens = token_usage.input_tokens
@@ -576,7 +577,7 @@ RULES:
     
 
 
-        
+        print("Rephrased Question:", response_message)
         message_vector = OpenAIclient.embeddings.create(
             input=response_message,
             model="text-embedding-3-large"
