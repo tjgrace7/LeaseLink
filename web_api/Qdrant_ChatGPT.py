@@ -441,6 +441,7 @@ Use this format exactly:
                     if ht and ht not in merged[key]['highlight_text']:
                         merged[key]['highlight_text'] = (merged[key]['highlight_text'] + " | " + ht).strip(" |")
                 json_data = list(merged.values())
+        print("Final Answer:", final_message)
 
         return final_message or default_response, prompt_tokens, prompt_cost, completion_tokens, completion_cost, json_data or [], email_data or []
 

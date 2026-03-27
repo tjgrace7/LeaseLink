@@ -605,6 +605,10 @@ async def tenant_send_message(
     body = await request.body()
     print("raw body: ", body)
     message_request = await request.json()
+    auth_id = message_request.get("auth_id")
+    entity_type = message_request.get("entity_type")
+    entity_id = message_request.get("entity_id")
+    company_id = message_request.get("company_id")
 
     token = authorization.replace("Bearer", "").strip() if authorization else None
     if not token:
@@ -616,6 +620,55 @@ async def tenant_send_message(
 
     if auth["sub"] != message_request.get("auth_id"):
         raise HTTPException(status_code=403, detail="auth_id does not match token")
+    
+    user_data = (
+        supabase_client
+        .table("User_Data")
+        .select("role_id, company_id, user_id")
+        .eq("auth_id", auth_id)
+        .single()
+        .execute()
+    )
+
+    if not user_data.data:
+        raise HTTPException(status_code=403, detail="user not found")
+
+    print("User Data:", user_data)
+
+    user_role = (
+        supabase_client
+        .table("Roles")
+        .select("Is_LeaseLink_Admin, View_All_Tenants, View_All_Properties")
+        .eq("id", user_data.data["role_id"])
+        .single()
+        .execute()
+    )
+
+    if not user_role.data:
+        raise HTTPException(status_code=403, detail="role not found")
+
+    print("User Role:", user_role)
+
+    role = user_role.data
+    user_company_id = user_data.data["company_id"]
+    user_id = user_data.data["user_id"]
+
+    # Company check
+    if not role.get("Is_LeaseLink_Admin"):
+        if company_id != user_company_id:
+            raise HTTPException(
+                status_code=403,
+                detail="company id does not match user company id"
+            )
+    if entity_type == "tenant":
+        authorize_tenant_access(supabase_client, role, user_id, company_id, entity_id)
+
+    elif entity_type == "property":
+        authorize_property_access(supabase_client, role, user_id, company_id, entity_id)
+
+
+    else:
+        raise HTTPException(status_code=400, detail="invalid entity_type")
 
     threading.Thread(
         target=handle_entity_question,
@@ -852,7 +905,29 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
         prompt_cost = 0.0
         prompt_tokens = 0.0
         json_data = {}
-        
+
+        user_data = supabase_client.table("User_Data").select('role_id', 'company_id', 'user_id').eq('auth_id', auth_id).single().execute()
+        print('User Data: ', user_data)
+        user_role = supabase_client.table('Roles').select('Is_LeaseLink_Admin', 'View_All_Tenants', 'View_All_Properties').eq('id', user_data.data.get('role_id')).single().execute()
+        print('User Role: ', user_role)
+
+        role = user_role.data
+        if not role.get('Is_LeaseLink_Admin'):
+            if company_id != user_data.data.get('company_id'):
+                print("Company ID mismatch for non-admin user")
+                return
+        if not role.get('View_All_Tenants') and entity_type == 'tenant':
+            tenants = supabase_client.table('User_Tenant').select('tenant_id').eq('user_id', user_data.data.get('user_id')).execute()
+            tenant_ids = [t['tenant_id'] for t in tenants.data]
+            if entity_id not in tenant_ids:
+                print("Tenant access violation for user")
+                return
+        if not role.get('View_All_Properties') and entity_type == 'property':
+            properties = supabase_client.table('User_Property').select('property_id').eq('user_id', user_data.data.get('user_id')).execute()
+            property_ids = [p['property_id'] for p in properties.data]
+            if entity_id not in property_ids:
+                print("Property access violation for user")
+                return
         if entity_type == "tenant":
             unit_id = message_request.get('unit_id')
 
@@ -960,6 +1035,63 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
 
     except Exception as e:
         print("Error in threaded message handler:", e)
+
+def authorize_tenant_access(supabase_client, role, user_id, company_id, tenant_id):
+    if role.get("View_All_Tenants"):
+        result = (
+            supabase_client
+            .table("tenant")
+            .select("tenant_id")
+            .eq("tenant_id", tenant_id)
+            .eq("property_management_id", company_id)
+            .limit(1)
+            .execute()
+        )
+
+        if not result.data:
+            raise HTTPException(status_code=403, detail="tenant id does not match company tenant ids")
+    else:
+        result = (
+            supabase_client
+            .table("User_Tenant")
+            .select("tenant_id")
+            .eq("user_id", user_id)
+            .eq("tenant_id", tenant_id)
+            .limit(1)
+            .execute()
+        )
+
+        if not result.data:
+            raise HTTPException(status_code=403, detail="tenant id does not match user tenant ids")
+
+
+def authorize_property_access(supabase_client, role, user_id, company_id, property_id):
+    if role.get("View_All_Properties"):
+        result = (
+            supabase_client
+            .table("properties")
+            .select("prop_id")
+            .eq("prop_id", property_id)
+            .eq("pm_company", company_id)
+            .limit(1)
+            .execute()
+        )
+
+        if not result.data:
+            raise HTTPException(status_code=403, detail="property id does not match company property ids")
+    else:
+        result = (
+            supabase_client
+            .table("User_Property")
+            .select("property_id")
+            .eq("user_id", user_id)
+            .eq("property_id", property_id)
+            .limit(1)
+            .execute()
+        )
+
+        if not result.data:
+            raise HTTPException(status_code=403, detail="property id does not match user property ids")
 
 def handle_help_chat(message_request):
     """Thread target for processing a help documentation chat question.
