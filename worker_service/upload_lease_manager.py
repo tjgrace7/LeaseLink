@@ -31,6 +31,26 @@ import traceback
 
 from . import Textract, final_check
 
+def detect_file_type(file_bytes: bytes) -> str | None:
+    if file_bytes.startswith(b"%PDF-"):
+        return "application/pdf"
+
+    if file_bytes.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+
+    if file_bytes.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+
+    if file_bytes.startswith(b"II*\x00") or file_bytes.startswith(b"MM\x00*"):
+        return "image/tiff"
+
+    return None
+ALLOWED_TYPES = {
+    "application/pdf",
+    "image/png",
+    "image/jpeg",
+    "image/tiff",
+}
 
 def load_pdf(
     auth_id: str,
@@ -64,6 +84,13 @@ def load_pdf(
 
     # 1) Download the PDF
     pdf_file = Supabase_api.download_file(supabase_client, bucket_name, get_pdf)
+    file_type = detect_file_type(pdf_file)
+    if file_type not in ALLOWED_TYPES:
+        print("Invalid File Type Detected:", file_type)
+        uploadError(f"Invalid file type: {file_type}", job_status, supabase_client, job_id, get_pdf, group_id)
+        return
+
+
 
     try:
 
