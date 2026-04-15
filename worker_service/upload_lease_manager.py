@@ -96,7 +96,7 @@ def load_pdf(
         print("Invalid File Type Detected:", file_type)
         uploadError(f"Invalid file type: {file_type}", job_status, supabase_client, job_id, get_pdf, group_id)
         return
-
+    print("File Type", file_type)
 
 
     try:
