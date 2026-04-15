@@ -43,6 +43,12 @@ def detect_file_type(file_bytes: bytes) -> str | None:
 
     if file_bytes.startswith(b"II*\x00") or file_bytes.startswith(b"MM\x00*"):
         return "image/tiff"
+    try:
+      text = file_bytes.decode('utf-8').strip()
+      json.loads(text)
+      return "application/json"
+    except:
+      pass
 
     return None
 ALLOWED_TYPES = {
@@ -50,6 +56,7 @@ ALLOWED_TYPES = {
     "image/png",
     "image/jpeg",
     "image/tiff",
+    "application/pdf"
 }
 
 def load_pdf(
