@@ -660,10 +660,16 @@ async def tenant_send_message(
                 status_code=403,
                 detail="company id does not match user company id"
             )
+    company = supabase_client.table("Property_Management_Companies").select('Base_Function, propertyChat').eq('company_id', company_id).single().execute()
+
     if entity_type == "tenant":
+        if not company.data['Base_Function']:
+                raise HTTPException(status_code=403, detail="company does not have access to tenant chat")
         authorize_tenant_access(supabase_client, role, user_id, company_id, entity_id)
 
     elif entity_type == "property":
+        if not company.data['propertyChat']:
+                raise HTTPException(status_code=403, detail="company does not have access to property chat")
         authorize_property_access(supabase_client, role, user_id, company_id, entity_id)
 
 
@@ -1037,6 +1043,7 @@ def handle_entity_question(message_request, supabase_client, qdrant_client, Open
         print("Error in threaded message handler:", e)
 
 def authorize_tenant_access(supabase_client, role, user_id, company_id, tenant_id):
+
     if role.get("View_All_Tenants"):
         result = (
             supabase_client
