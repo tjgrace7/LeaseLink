@@ -82,7 +82,7 @@ log.setLevel(logging.INFO)
 # --------------------------- App Setup --------------------------------
 app = FastAPI()
 print("Boot 3: FastAPI app created", flush=True)
-claude_model = "claude-sonnet-4-20250514"
+claude_model = "claude-opus-4-7"
 
 app.add_middleware(
     CORSMiddleware,

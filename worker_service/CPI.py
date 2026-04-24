@@ -199,7 +199,6 @@ The years returned must refer to the Index observation years, not the Adjustment
                 }
             ]}
         ],
-        temperature=0.0,
         max_tokens=800
     )
     token_usage = chat_response.usage

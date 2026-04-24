@@ -412,7 +412,6 @@ The json wants a short and long answer. This is where you will answer the questi
                 }
             ]}
         ],
-        temperature=0.0,
         max_tokens=4000
     )
     token_usage = chat_response.usage
@@ -545,7 +544,7 @@ If the user asks about square footage, land size, or area, generate a query that
 - site area
 - parcel size
 - property area
-- For Rent search for the symbol $. While including standard rent terms like "rent", "base rent", "escalation", "monthly rent", "annual rent", "percentage rent", and "prorated rent", you should also include the $ symbol in your search query to help retrieve relevant financial information from the lease documents. This is because rent amounts are often listed with the $ symbol, and including it can improve the relevance of search results related to rent calculations or amounts.
+- For Rent or anything money related use $ to find the appropriate chunks. While including standard rent terms like "rent", "base rent", "escalation", "monthly rent", "annual rent", "percentage rent", and "prorated rent", you should also include the $ symbol in your search query to help retrieve relevant financial information from the lease documents. This is because rent amounts are often listed with the $ symbol, and including it can improve the relevance of search results related to rent calculations or amounts.
 
 Land size is often expressed as square feet or acres. The answer may come from county property reports or appraisals.
 
@@ -563,13 +562,13 @@ Return a **single, semantically precise** version of the user's question that wi
                     'type': 'text',
                     'text': question}]}
             ],
-            temperature=0.0,
             max_tokens=4000
         )
         token_usage = message_summary.usage
         prompt_tokens = token_usage.input_tokens
         completion_tokens = token_usage.output_tokens
         ai_message = message_summary.content[0].text
+        print("Search Message", ai_message)
         response_message = re.sub(r"```(?:json|emailjson)\s*.*?```", "", ai_message, flags=re.DOTALL|re.IGNORECASE).strip()
         json_data = Qdrant_ChatGPT._extract_after_fence(ai_message, "json")
 
@@ -681,12 +680,12 @@ The json wants a short and long answer. This is where you will answer the questi
                         'type': 'text',
                         'text': question}]}
                 ],
-            temperature=0.0,
             max_tokens=10000)
     token_usage = message_summary.usage
     prompt_tokens = token_usage.input_tokens
     completion_tokens = token_usage.output_tokens
     ai_message = message_summary.content[0].text
+    print("Claude Model", claude_model)
     json_data = Qdrant_ChatGPT._extract_after_fence(ai_message, 'json')
 
     json_data, short_answer, long_answer = sort_json(json_data)

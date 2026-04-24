@@ -909,7 +909,6 @@ def claude_message(claude_model, system_prompt, user_message, max_tokens = 300):
                 }
             ]}
         ],
-        temperature=0.0,
         max_tokens=max_tokens
     )
     response = chat_response.content[0].text

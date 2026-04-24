@@ -158,6 +158,7 @@ def get_relevant_chunks(collection_Name, q_client, filterid1, company_id, messag
          dicts and email_data is a list of referenced email source dicts.
     """
     print("get_relevant_chunks")
+    print("Claude Model:", claude_model)
     now = datetime.now()
     prompt_tokens = 0
     prompt_cost = 0 
@@ -207,7 +208,6 @@ Return a **single, semantically precise** version of the user's question that wi
                     'type': 'text',
                     'text': message}]}
             ],
-            temperature=0.0,
             max_tokens=4000
         )
         token_usage = message_summary.usage
@@ -402,7 +402,6 @@ Use this format exactly:
                         'text': message
                     }]}
             ],
-            temperature=0.0,
             max_tokens=4000
         )
         token_usage = chat_response.usage

@@ -84,7 +84,6 @@ You are a helpful assistant designed to rephrase a users question to search a qd
                     'type': 'text',
                     'text': message}]}
             ],
-            temperature=0.0,
             max_tokens=1000
         )
             
@@ -163,7 +162,6 @@ url: 'https://leaselink-docs.onrender.com/docs/Lease-Link-Pages/Dashboard'
                     'type': 'text',
                     'text': user_message}]}
             ],
-            temperature=0.2,
             max_tokens=1000
         )
     token_usage = message_summary.usage
