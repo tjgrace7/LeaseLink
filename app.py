@@ -914,9 +914,6 @@ async def new_contact_email_sync(
 
     for email in res.data:
         
-        if not email.get("Active", False):
-            print(f"Integration for auth_id {auth_id} is not active; skipping sync")
-            continue
         provider = email.get("provider")
         if not provider:
             return Response(status_code=204)
