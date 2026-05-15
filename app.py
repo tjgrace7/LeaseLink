@@ -898,7 +898,7 @@ async def new_contact_email_sync(
     # 3. Look up provider for this auth_id
     res = (
         supabase_client.table("Access_Tokens")
-        .select("provider, Active")
+        .select("provider")
         .eq("user_auth_id", auth_id)
         .execute()
     )
