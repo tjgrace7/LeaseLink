@@ -898,11 +898,11 @@ async def new_contact_email_sync(
     print(contact)
     if not auth_id:
         raise HTTPException(status_code=400, detail="Missing auth_id")
-
+    authorization_check(auth_id=auth_id, company_id=contact['company_id'])
     # 3. Look up provider for this auth_id
     res = (
         supabase_client.table("Access_Tokens")
-        .select("provider")
+        .select("provider, Active")
         .eq("user_auth_id", auth_id)
         .limit(1)
         .execute()
@@ -912,13 +912,19 @@ async def new_contact_email_sync(
         # no token for this auth_id; nothing to sync
         return Response(status_code=204)
 
-    provider = res.data[0].get("provider")
-    if not provider:
-        return Response(status_code=204)
-    contacts = [contact]
-    print("Sync Mail")
-    # 4. Trigger sync (fire-and-forget style)
-    return await email_integration.SyncMail(auth_id, provider, True, contacts)
+    for email in res.data:
+        
+        if not email.get("Active", False):
+            print(f"Integration for auth_id {auth_id} is not active; skipping sync")
+            continue
+        provider = email.get("provider")
+        if not provider:
+            return Response(status_code=204)
+        
+        contacts = [contact]
+        print("Sync Mail")
+        # 4. Trigger sync (fire-and-forget style)
+        return await email_integration.SyncMail(auth_id, provider, True, contacts)
 @app.post('/api/integrations/email/disconnect')
 async def delete_email_integration(request: Request, authorization: Optional[str] = Header(default=None)):
     body = await request.body()
