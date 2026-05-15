@@ -183,10 +183,6 @@ def authorization_check(company_id: str = "Not Required", tenant_id: str = "Not 
 
     if property_id != "Not Required":
         authorize_property_access(supabase_client, role, user_id, company_id, property_id)
-
- 
-    else:
-        raise HTTPException(status_code=400, detail="invalid entity_type")
 def verify_supabase_jwt(token: str):
     """Decode and verify a Supabase-issued JWT using the shared HS256 secret.
 
