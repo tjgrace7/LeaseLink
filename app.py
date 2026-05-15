@@ -945,7 +945,8 @@ async def delete_email_integration(request: Request, authorization: Optional[str
 
     if auth["sub"] != auth_id:
         raise HTTPException(status_code=403, detail="auth_id does not match token")
-
+    
+    supabase_client.table("Access_Tokens").update({"Active": False}).eq("user_auth_id", auth_id).eq("provider", provider).execute()
     await email_integration.remove_integration_tokens(auth_id, provider, delete_qdrant)
     return {"status": "Integration removed"}
 
