@@ -131,6 +131,62 @@ job_queue = Queue()
 
 
 # --------------------------- Helpers ----------------------------------
+def authorization_check(company_id: str = "Not Required", tenant_id: str = "Not Required", auth_id: str = "Not Required", unit_id: str = "Not Required", property_id: str = "Not Required"):
+    """Verify the Authorization header contains a valid Supabase JWT with the expected auth_id.
+
+    Raises HTTPException(401) if the token is missing/invalid, or 403 if the auth_id doesn't match.
+    """
+    user_data = (
+        supabase_client
+        .table("User_Data")
+        .select("role_id, company_id, user_id")
+        .eq("auth_id", auth_id)
+        .single()
+        .execute()
+    )
+
+    if not user_data.data:
+        raise HTTPException(status_code=403, detail="user not found")
+
+    print("User Data:", user_data)
+
+    user_role = (
+        supabase_client
+        .table("Roles")
+        .select("Is_LeaseLink_Admin, View_All_Tenants, View_All_Properties")
+        .eq("id", user_data.data["role_id"])
+        .single()
+        .execute()
+    )
+
+    if not user_role.data:
+        raise HTTPException(status_code=403, detail="role not found")
+
+    print("User Role:", user_role)
+
+    role = user_role.data
+    user_company_id = user_data.data["company_id"]
+    user_id = user_data.data["user_id"]
+
+    # Company check
+    if not role.get("Is_LeaseLink_Admin"):
+        if company_id != user_company_id and company_id != "Not Required":
+            raise HTTPException(
+                status_code=403,
+                detail="company id does not match user company id"
+            )
+    company = supabase_client.table("Property_Management_Companies").select('Base_Function, propertyChat').eq('company_id', company_id).single().execute()
+
+    if tenant_id != "Not Required":
+
+        authorize_tenant_access(supabase_client, role, user_id, company_id, tenant_id)
+
+    if property_id != "Not Required":
+        authorize_property_access(supabase_client, role, user_id, company_id, property_id)
+
+ 
+    else:
+        raise HTTPException(status_code=400, detail="invalid entity_type")
 def verify_supabase_jwt(token: str):
     """Decode and verify a Supabase-issued JWT using the shared HS256 secret.
 
@@ -491,6 +547,8 @@ async def refresh_tenant(request: Request, background_tasks: BackgroundTasks, au
         if auth["sub"] != auth_id:
             print("Auth ID mismatch")
             raise HTTPException(status_code=403, detail="auth_id does not match token")
+        authorization_check(company_id=company_id, tenant_id=tenant_id, auth_id=auth_id, unit_id=unit_id)
+
         background_tasks.add_task(
         final_check.extract_tenant_data,
         tenant_id,
@@ -692,6 +750,7 @@ async def help_send_message(
     body = await request.body()
     print("raw body: ", body)
     message_request = await request.json()
+    print(message_request)
 
     token = authorization.replace("Bearer", "").strip() if authorization else None
     if not token:
@@ -703,6 +762,7 @@ async def help_send_message(
 
     if auth["sub"] != message_request.get("auth_id"):
         raise HTTPException(status_code=403, detail="auth_id does not match token")
+    authorization_check(company_id=message_request.get("company_id"), auth_id=message_request.get("auth_id"))
 
     threading.Thread(
         target=handle_help_chat,
@@ -1070,6 +1130,7 @@ def authorize_tenant_access(supabase_client, role, user_id, company_id, tenant_i
 
         if not result.data:
             raise HTTPException(status_code=403, detail="tenant id does not match user tenant ids")
+
 
 
 def authorize_property_access(supabase_client, role, user_id, company_id, property_id):
