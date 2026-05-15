@@ -904,7 +904,6 @@ async def new_contact_email_sync(
         supabase_client.table("Access_Tokens")
         .select("provider, Active")
         .eq("user_auth_id", auth_id)
-        .limit(1)
         .execute()
     )
 
