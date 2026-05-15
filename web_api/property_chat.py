@@ -550,7 +550,7 @@ Land size is often expressed as square feet or acres. The answer may come from c
 
 Return a **single, semantically precise** version of the user's question that will help match the most relevant document chunks in the vector database.
 
-1. Determine if this question requires a full property overview. 
+1. Determine if this question requires a full property overview. ALWAYS return a needs_overview flag in a JSON block, even if it's False.  This will guide whether we need to generate a final summary across tenants.
 
 ```json Open Curly Bracket
     needs_overview: True/False
@@ -571,7 +571,7 @@ Return a **single, semantically precise** version of the user's question that wi
         print("Search Message", ai_message)
         response_message = re.sub(r"```(?:json|emailjson)\s*.*?```", "", ai_message, flags=re.DOTALL|re.IGNORECASE).strip()
         json_data = Qdrant_ChatGPT._extract_after_fence(ai_message, "json")
-
+        print("Json Data", json_data)
         needs_review = json_data['needs_overview']
     
 
