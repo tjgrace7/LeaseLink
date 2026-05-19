@@ -114,9 +114,7 @@ def load_pdf(
              company_id=company_id, 
              embedding_client=OpenAI,
             qdrant_client=qdrant_client,
-            jobid=job_id,
             collectionName=collectionName,
-            group_id=group_id,
             lease_id=lease_id
              )
 
