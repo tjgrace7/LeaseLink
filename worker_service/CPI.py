@@ -36,6 +36,7 @@ from openai import OpenAI
 from anthropic import Anthropic
 from web_api import Qdrant_ChatGPT
 from datetime import datetime
+import traceback
 from dotenv import load_dotenv
 load_dotenv()
 

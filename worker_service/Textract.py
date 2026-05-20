@@ -117,117 +117,82 @@ def is_incomplete_heading(line: str) -> bool:
     if line.endswith("$") and len(line) <= 2:
         return True
     return False
-import time
-# Matches: "1.", "1.2", "1.2.3", "1.2.3.4" optionally followed by text
-NUMBERED_SECTION_RE = re.compile(
-    r'^(\d+\.)+(\d+)?'          # e.g. "1." or "1.2" or "1.2.3"
-    r'(\s+[A-Z][A-Za-z0-9 \';,&/\-–—()]*)?$'  # optional title
-)
 
-# Matches: "ARTICLE I.", "ARTICLE XIV. TITLE", "SECTION 3."
-ARTICLE_SECTION_RE = re.compile(
-    r'^(ARTICLE|SECTION)\s+[IVXLCDM\d]+\.?\s*.*$',
-    re.IGNORECASE
-)
-
-# Matches labeled exhibits: "Exhibit A", "EXHIBIT B-1"
-EXHIBIT_RE = re.compile(
-    r'^EXHIBIT\s+[A-Z0-9][-\w]*\.?',
-    re.IGNORECASE
-)
-
-# Short all-caps line (no lowercase letters, short, typically a label)
-# Excludes lines that look like body text (contain common body-text punctuation patterns)
-ALLCAPS_LABEL_RE = re.compile(
-    r'^[A-Z][A-Z0-9 &;:\'\-–/(),.]+$'
-)
-
-# Lines that are clearly NOT headings even if all-caps:
-# - End with a comma (continuation)
-# - Are very long (>90 chars)
-# - Contain lowercase (mixed case body text)
 
 def is_heading(line: str) -> bool:
-    """
-    Return True if the line is likely a document section heading.
+    """Return True if the line is a document section heading.
 
-    Prioritizes structural/syntactic signals over fragile heuristics.
-    Designed for commercial lease documents but generalizes reasonably well.
+    Uses a regex for ARTICLE/SECTION patterns first, then falls back to an
+    uppercase-ratio heuristic (>=85% uppercase letters, <=70 chars).
     """
     s = line.strip()
     if not s:
         return False
+    # Strong signal words
+    if HEADER_RE.match(s):
+        return True
 
-    # --- Disqualifiers: things that look like headings but aren't ---
-
-    # Too long to be a heading (body sentences run long)
-    if len(s) > 120:
+    # Generic uppercase-ish heading heuristic
+    letters = [ch for ch in s if ch.isalpha()]
+    if len(letters) < 4:
         return False
 
-    # Ends with a comma — it's a continuation line, not a heading
-    if s.endswith(','):
-        return False
+    upper_ratio = sum(ch.isupper() for ch in letters) / len(letters)
+    short = len(s) <= 70
+    no_period_end = not s.endswith(".")  # headings often no period, but ARTICLE IV. RENT has one — so don't rely solely
+    looks_like_heading = upper_ratio >= 0.85 and short
 
-    # --- Strong structural signals ---
+    # If it's all-caps and short, treat as heading even if it ends with a period
+    return looks_like_heading
 
-    if ARTICLE_SECTION_RE.match(s):
-        return True
-
-    if NUMBERED_SECTION_RE.match(s):
-        return True
-
-    if EXHIBIT_RE.match(s):
-        return True
-
-    # --- All-caps label heuristic (applied conservatively) ---
-    # Only fires if the line is short, all-caps, and doesn't end with a period
-    # followed by more text (which would indicate a sentence, not a label)
-    if ALLCAPS_LABEL_RE.match(s):
-        # Exclude if it ends with a period AND is longer than ~40 chars
-        # (short period-ending labels like "WITNESSETH:" are fine)
-        if s.endswith('.') and len(s) > 40:
-            return False
-        # Exclude if it looks like an enumeration item (single letter + period)
-        if re.match(r'^[A-Z]\.$', s):
-            return False
-        # Require minimum length to avoid matching stray abbreviations
-        if len(s) >= 4:
-            return True
-
-    return False
-
-def glue_headings(lines: Dict[str, int], currentHeading: str = "") -> List[str]:
+def glue_headings(lines: List[str]) -> List[str]:
     """
     If we find a heading line, append the next non-empty line to it (or even the next 2 lines).
     This prevents orphan headings like 'ARTICLE IV. RENT'.
     """
     out = []
     i = 0
-    
     while i < len(lines):
-        chunks = ""
-        cur = (lines[i]['text'] or "").strip()
+        cur = (lines[i] or "").strip()
         if not cur:
             i += 1
             continue
+
         if is_heading(cur):
-            currentHeading = cur
-        else:
-            chunks += currentHeading + '\n'
             # find next non-empty
-        j = i + 1
-        chunks += cur + " "
-        while j < len(lines) and lines[j]['text'] and not is_heading(lines[j]['text']):
-            nxt = lines[j]['text'].strip()
-            if nxt:
-                chunks += nxt + " "
-            j += 1
+            j = i + 1
+            while j < len(lines) and not (lines[j] or "").strip():
+                j += 1
 
-        out.append({'text': chunks.strip(), 'page_num': lines[i]['page_num']})
+            # If there's content after heading, glue it
+            if j < len(lines):
+                nxt = (lines[j] or "").strip()
+
+                # Optionally glue 2nd line too if it's still "header-y" (e.g., subheading) or very short
+                k = j + 1
+                while k < len(lines) and not (lines[k] or "").strip():
+                    k += 1
+                glued = f"{cur}\n{nxt}"
+
+                if k < len(lines):
+                    nxt2 = (lines[k] or "").strip()
+                    # If nxt is tiny or nxt2 continues the thought, glue nxt2 as well
+                    if len(nxt) < 40 and len(nxt2) < 200:
+                        glued = f"{glued}\n{nxt2}"
+                        i = k
+                    else:
+                        i = j
+                else:
+                    i = j
+
+                out.append(glued)
+                i += 1
+                continue
+
+        out.append(cur)
         i += 1
-            
 
-    return out, currentHeading
+    return out
 
 def chunk_text_by_sections(text: str) -> List[str]:
     """Split a page's text into logical chunks at lease section boundaries.
@@ -254,7 +219,7 @@ def chunk_text_by_sections(text: str) -> List[str]:
         chunks.append("\n".join(current))
     return [c for c in chunks if c.strip()]
 
-def split_long_chunk(c: str, limit: int, currentHeading: str = "") -> List[str]:
+def split_long_chunk(c: str, limit: int) -> List[str]:
     """Split a single chunk into sub-chunks no longer than limit characters.
 
     Prefers to split at newline or space boundaries that fall in the last 40% of
@@ -271,7 +236,7 @@ def split_long_chunk(c: str, limit: int, currentHeading: str = "") -> List[str]:
         cut = max(nl, sp)
         if cut > start + int(limit * 0.6):
             end = cut
-        parts.append(currentHeading + ": " + c[start:end].strip())
+        parts.append(c[start:end].strip())
         start = end
     output = [p for p in parts if p]
     return output
@@ -440,11 +405,9 @@ def build_pages_structured(blocks: List[Dict[str,Any]]) -> List[Dict[str, Any]]:
     Returns a list of page dicts: {'page': int, 'text': str, 'tables': list}.
     """
     pages: Dict[int, Dict[str, Any]] = {}
-    total_pages = 0
     for b in blocks:
         page = b.get("Page", 1)
         pages.setdefault(page, {"lines": [], "tables": []})
-        total_pages = max(total_pages, page)
         if b.get("BlockType") == "TABLE":
 
             pages[page]['tables'].append(b)
@@ -453,9 +416,7 @@ def build_pages_structured(blocks: List[Dict[str,Any]]) -> List[Dict[str, Any]]:
             pages[page]["lines"].append({
                 "text": b.get("Text", "").strip(),
                 "bb": bb})
-
-    tables = []
-    cleaned_lines = []
+    output = []
     for page_num in sorted(pages.keys()):
         raw_lines = pages[page_num]["lines"]
 
@@ -463,14 +424,11 @@ def build_pages_structured(blocks: List[Dict[str,Any]]) -> List[Dict[str, Any]]:
         line_objs = sort_lines(raw_lines)
         line_objs = filter_lines_outside_table(line_objs, pages[page_num]['tables'])
         raw_lines = [x['text'] for x in line_objs if x['text']]
-        if(pages[page_num]['tables']):
-            tables.append({"table": pages[page_num]['tables'], "page_num": page_num})
 
 
-        
+        cleaned_lines = []
         i = 0
         label_re = re.compile(r".*:\s*$")
-        currentHeading = ""
         while i < len(raw_lines):
             line = raw_lines[i]
             s = (line or "").strip()
@@ -498,12 +456,17 @@ def build_pages_structured(blocks: List[Dict[str,Any]]) -> List[Dict[str, Any]]:
                 else:
                     line = s
 
-            cleaned_lines.append({"text": line, "page_num": page_num})
+            cleaned_lines.append(line)
             i+=1
-    cleaned_lines, currentHeading = glue_headings(cleaned_lines, currentHeading=currentHeading)
+        cleaned_lines = glue_headings(cleaned_lines)
 
-
-    return cleaned_lines, tables, total_pages, currentHeading
+        if cleaned_lines or pages[page_num]['tables']:
+            output.append({
+                "page": page_num,
+                "text": "\n".join(cleaned_lines),
+                "tables": pages[page_num]['tables']
+            })
+    return output
     
 def extract_table_text(table_block: dict, blocks_by_id: Dict[str, dict]) -> str:
     """
@@ -513,7 +476,6 @@ def extract_table_text(table_block: dict, blocks_by_id: Dict[str, dict]) -> str:
 
     # 1) Get CELL blocks for this table
     cells = []
-    print("Extracting table text for table block:", table_block)
     for rel in table_block.get("Relationships", []) or []:
         if rel.get("Type") == "CHILD":
             for cid in rel.get("Ids", []) or []:
@@ -660,7 +622,6 @@ def textract_exists(object_path) -> bool:
     Returns (True, blocks_list) if found and valid, (False, None) otherwise.
     """
     try:
-        print("Object Path", object_path)
         raw = supabase.storage.from_(bucket).download(object_path)
         if hasattr(raw, "decode"):
             raw_bytes = raw
@@ -689,8 +650,11 @@ def runTextract(
     company_id: str,
     embedding_client,
     qdrant_client,
+    jobid,
     collectionName,
+    group_id,
     lease_id,
+    resetSupabase = False
 ):
     """
     pdf: either bytes or a local path.
@@ -699,7 +663,6 @@ def runTextract(
 
     supabase = Supabase_api.supabase_client_setup()
     try:
-        total_pages = 0
         folder_path = os.path.dirname(file_path)
         # --- Load bytes
         if isinstance(pdf, (bytes, bytearray)):
@@ -737,7 +700,8 @@ def runTextract(
             print("Splitting Pages")
         else:
             blocks = data
-        cleaned_lines, tables, total_pages, currentHeading = build_pages_structured(blocks)
+        section_pages = build_pages_structured(blocks)
+        total_pages = len(section_pages)
         
         # --- Chunk per page, and IMMEDIATELY embed + upsert ONE AT A TIME
         ensure_once = {"done": False}
@@ -747,17 +711,17 @@ def runTextract(
         blocks_by_id = {b["Id"]: b for b in blocks}
         all_table_text = []
 
-        final_index = 1
-        for line in cleaned_lines:
-            page_text = line.get("text", "")
-            page_num = line.get("page_num", 1)
 
+        for page in section_pages:
 
+            page_text = page['text']
+            page_num = page['page']
+            sections = chunk_text_by_sections(page_text)
             final_chunks: List[str] = []
 
+            for c in sections if sections else [page_text]:
 
-
-            final_chunks.extend(split_long_chunk(page_text, MAX_CHARS_PER_CHUNK, currentHeading))
+                final_chunks.extend(split_long_chunk(c, MAX_CHARS_PER_CHUNK))
             print(f"Final Chunks {len(final_chunks)}")
             
             for chunk_index, c in enumerate(final_chunks):
@@ -786,22 +750,15 @@ def runTextract(
                     
                     upsert_point(collectionName, point, qdrant_client, page_num)
                     total_chunks += 1
-                    final_index = chunk_index + 1
-        for table in tables:
-            table_blocks = table.get("table", [])
-            page_num = table.get("page_num", 1)
-
-            for table_block in table_blocks:
+            for t_index, table_block in enumerate(page.get('tables', [])):
                 table_text = extract_table_text(table_block, blocks_by_id)
-
-
-                all_table_text.append([table_text, table.get("page_num", 1)])
+                all_table_text.append([table_text, page])
                 if table_text and table_text.strip():
                     cost, table_point = embed_one_chunk(
                         embedding_client=embedding_client,
                         chunk_text=table_text,
                         page_number=page_num,
-                        chunk_index=final_index,
+                        chunk_index=t_index,
                         tenantid=tenantid,
                         propertymanagerid=propertymanagerid,
                         propertyid=propertyid,
@@ -814,7 +771,7 @@ def runTextract(
                         ensure_collection_once=ensure_once,
                         lease_id=lease_id
                     )
-                    final_index += 1
+                    
                     total_cost += cost
                     total_chunks += 1
                     upsert_point(collectionName, table_point, qdrant_client, page_num)
@@ -840,5 +797,4 @@ def runTextract(
         except Exception:
             pass
         raise
-
 
