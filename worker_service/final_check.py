@@ -930,9 +930,3 @@ def point_to_dict(p):
     }
 
 
-
-extract_tenant_data(
-    tenant_id="f5037204-527a-4170-a059-5b3074211e9f",
-    unit_id="b2fba632-0d8e-45d9-bce7-131ba0e1337a",
-    company_id="917c34eb-bcf1-43d1-9120-9a3415f3acea",
-)

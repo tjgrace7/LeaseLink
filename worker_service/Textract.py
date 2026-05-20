@@ -797,4 +797,3 @@ def runTextract(
         except Exception:
             pass
         raise
-
