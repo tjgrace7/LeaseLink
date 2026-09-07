@@ -17,6 +17,10 @@ Check out the FrontEnd Here: https://github.com/tjgrace7/LeaseLink_FrontEnd
 
 Check out the Documentation Here: https://github.com/tjgrace7/leaselink-docs
 
+Architecture 
+![Lease Link high-level architecture ->](docs/images/architecture-overview.png)
+
+[Full system diagram and architecture decisions ->](docs/architecture.md)
 # LeaseLink Backend 🏢🤖
 
 This is the backend for **LeaseLink**, an AI-powered lease assistant designed to help property managers query, summarize, and extract insights from commercial lease documents.
