@@ -9,7 +9,7 @@ We spent countless hours trying to perfect the Lease Abstraction process across 
 It wasn't commercially viable, so we wound it down. But that year taught me more than any course could: shipping fixes for real user issues, managing the full frontend-to-backend request path, and running a production Postgres database through Supabase.
 That experience is what I'm building on now as I go deeper into backend and full-stack engineering.
 
-
+Check Out Lease Link in action: [Lease Link Promo](https://vimeo.com/1118917826)
 
 Here is the demo video: https://lnkd.in/gXW86k4x
 
