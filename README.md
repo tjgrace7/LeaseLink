@@ -9,7 +9,7 @@ We spent countless hours trying to perfect the Lease Abstraction process across 
 It wasn't commercially viable, so we wound it down. But that year taught me more than any course could: shipping fixes for real user issues, managing the full frontend-to-backend request path, and running a production Postgres database through Supabase.
 That experience is what I'm building on now as I go deeper into backend and full-stack engineering.
 
-Check Out Lease Link in action: [Lease Link Promo](https://vimeo.com/1118917826)
+Check Out Lease Link in action: [Lease Link Demo](https://youtu.be/o-0SNaP003A)0)
 
 Here is the demo video: https://lnkd.in/gXW86k4x
 
@@ -62,18 +62,32 @@ source venv/bin/activate  # or .\venv\Scripts\activate on Windows
 pip install -r requirements.txt
 
 #Set up .env. DO NOT COMMIT .env to version control it's already in .gitignore
-SUPABASE_URL=...
-SUPABASE_SERVICE_ROLE_KEY=...
-SUPABASE_PUBLIC_API_KEY=...
-SUPABASE_JWT=...
-
-OPEN_AI_PROJECT_KEY=...
-
-
-QDRANT_URL=...
-QDRANT_API_KEY=...
-
-PYTHON_EDGE_SECRET=...
+CRON_SECRET=
+Claude_API_KEY=
+OPEN_AI_PROJECT_KEY=
+PYTHON_EDGE_SECRET=
+QDRANT_API_KEY=
+QDRANT_URL=
+SUPABASE_JWT=
+SUPABASE_PUBLIC_API_KEY=
+SUPABASE_SERVICE_API_KEY=
+SUPABASE_URL=
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+RESEND_SECRET_KEY=
+Microsoft_Value=
+Microsoft_Secret_id=
+MS_CLIENT_ID=
+MS_REDIRECT_URI=
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+GOOGLE_PROJECT_ID=
+GOOGLE_AUTH_URI=
+GOOGLE_TOKEN_URI=
+GOOGLE_AUTH_PROVIDER_X509_CERT_URL=
+GOOGLE_REDIRECT_URI=
+ENCRYPTION_KEY=
+BLS_API_KEY=
 
 #Run App Locally
 uvicorn app:app --reload
